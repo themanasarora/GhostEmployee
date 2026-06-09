@@ -51,7 +51,7 @@ cp apps/web/.env.example apps/web/.env.local
 npm run dev
 ```
 
-App runs at `http://localhost:3000`
+App runs at `http://localhost:3001`
 
 ## Environment Variables
 
