@@ -4,7 +4,7 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { logout } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LogOut, Plus, Briefcase, Zap, X, ArrowRight, FolderOpen } from "lucide-react";
+import { LogOut, Plus, Briefcase, Zap, X, ArrowRight, FolderOpen, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
@@ -125,26 +125,18 @@ export default function DashboardPage() {
         <div className="absolute bottom-0 right-10 w-[500px] h-[300px] bg-indigo-900/10 rounded-full blur-[120px]" />
       </div>
 
-      {/* Top nav */}
       <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#0A0A14]/80 backdrop-blur-sm sticky top-0">
         <span className="text-base font-bold tracking-tight">
           <span className="text-white">Ghost</span>
           <span className="text-[#E94560]">Employee</span>
         </span>
-
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             {user.photoURL ? (
-              <img
-                src={user.photoURL}
-                alt={displayName}
-                className="size-8 rounded-full object-cover border border-white/10"
-              />
+              <img src={user.photoURL} alt={displayName} className="size-8 rounded-full object-cover border border-white/10" />
             ) : (
               <div className="size-8 rounded-full bg-[#E94560]/20 border border-[#E94560]/30 flex items-center justify-center">
-                <span className="text-xs font-bold text-[#E94560]">
-                  {displayName[0].toUpperCase()}
-                </span>
+                <span className="text-xs font-bold text-[#E94560]">{displayName[0].toUpperCase()}</span>
               </div>
             )}
             <span className="text-sm text-slate-300 hidden sm:block">{displayName}</span>
@@ -156,7 +148,6 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Main content */}
       <main className="relative z-10 max-w-5xl mx-auto px-6 py-12">
         {/* Welcome */}
         <div className="mb-10">
@@ -168,7 +159,18 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Stats row */}
+        {/* Plan banner */}
+        <div className="mb-8 flex items-center justify-between bg-gradient-to-r from-[#E94560]/10 to-indigo-900/20 border border-white/10 rounded-2xl px-6 py-4">
+          <div>
+            <p className="text-sm font-semibold text-white">Choose your plan to get started</p>
+            <p className="text-xs text-slate-400 mt-0.5">Basic (automations) or Advanced (full AI team) — both free during early access.</p>
+          </div>
+          <a href="/plans" className="shrink-0 flex items-center gap-1.5 text-sm font-medium text-[#E94560] hover:text-white transition-colors">
+            Select plan <ChevronRight className="size-4" />
+          </a>
+        </div>
+
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-10">
           {[
             { label: "Active Projects", value: totalProjects.toString(), limit: "Standard Account" },
@@ -191,8 +193,7 @@ export default function DashboardPage() {
           {/* Section header */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-white/5 bg-white/[0.01]">
             <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Briefcase className="size-4 text-slate-400" />
-              Projects
+              <Briefcase className="size-4 text-slate-400" /> Projects
             </h2>
             <Button size="sm" onClick={() => setShowCreateModal(true)}>
               <Plus className="size-4" />
