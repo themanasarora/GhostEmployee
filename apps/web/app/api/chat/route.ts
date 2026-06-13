@@ -1,290 +1,76 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-function getFallbackNotice(reason: string, status?: number): string {
-  return status ? `Offline Simulator Mode: ${reason} (${status}).` : `Offline Simulator Mode: ${reason}.`;
+const MOCK: Record<string, string[]> = {
+  ceo: ["As CEO, I see a clear strategic opportunity here. We should prioritize the core value proposition, validate with 10 target customers before building, and set a 6-week MVP timeline. My recommendation: proceed with a focused niche approach.", "Looking at the full picture, I recommend we move forward. The market timing is right, technical complexity is manageable, and our angle is differentiated. Let's assign tasks and execute."],
+  cto: ["From a technical standpoint, this is buildable in 3-4 weeks with Next.js, FastAPI, and PostgreSQL. I'd recommend starting with a monorepo and keeping the AI layer behind an abstraction. Main risk is pipeline latency.", "The architecture I'd propose: serverless functions for the API, a queue for agent tasks, Redis for session state. Launch on Vercel + Railway with zero DevOps overhead initially."],
+  pm: ["For the product requirements, I'd define three core user stories: validate an idea, plan a product, and get a growth strategy. The MVP needs goal input, agent execution, and a downloadable report. Everything else is Phase 2.", "The biggest friction point is time-to-first-value. We need the user to see agent output within 60 seconds. That should be our north star metric for the MVP."],
+  research: ["Market analysis shows this space is growing 40% YoY. Main competitors are AutoGPT (developer-only), CrewAI (no UX), and ChatGPT (no organizational structure). There's a clear gap for the 'hire employees' mental model targeting non-technical founders.", "The total addressable market for AI productivity tools is $47B by 2030. Our serviceable segment is approximately 50M people globally with demonstrated willingness to pay $49-149/month."],
+  growth: ["The highest-leverage acquisition channels: Product Hunt launch, Twitter/X content showing board meeting transcripts, and agency partnerships. The viral loop is the shareable report.", "For the first 100 users: direct outreach to founder communities, a Twitter thread with real output, and a free tier that delivers enough value for word-of-mouth."],
+  finance: ["Revenue model: Free tier, Pro at $49/month, Team at $149/month. At 1000 Pro users that's $49K MRR. LLM costs should stay under 15% with caching and model tiering.", "Unit economics: CAC via content marketing roughly $15, LTV at 12-month retention roughly $588. A 39x ratio is exceptional. Biggest cost risk is free-tier LLM spend — hard cap it."],
+  sales: ["For outreach: identify founders who've posted about AI tools recently on Twitter. Personal DM with a board meeting demo tailored to their startup. Conversion target 15% to free trial.", "The sales motion for agencies: offer a 3-month free Pro trial for a case study. Agencies have high willingness to pay if the product saves their team time on strategy work."],
+  recruiter: ["First two hires should be a full-stack engineer who knows Python and TypeScript, and a growth-focused PM. Both can be found in the Anthropic/OpenAI alumni networks.", "Job descriptions should emphasize mission over comp at this stage. Candidates excited about autonomous AI will be more effective than those optimizing for salary."],
+};
+
+function getMock(role: string): string {
+  const options = MOCK[role] ?? ["I've reviewed the context and recommend proceeding methodically, validating each assumption before committing resources."];
+  return options[Math.floor(Math.random() * options.length)];
 }
 
-function isHuggingFacePermissionError(errorText: string, status: number): boolean {
-  const normalizedError = errorText.toLowerCase();
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const { messages = [], systemPrompt, agentId, projectName, projectGoal, contextWindow, mode = "board" } = body;
 
-  return (
-    status === 401 ||
-    status === 403 ||
-    normalizedError.includes("sufficient permissions") ||
-    normalizedError.includes("permission") ||
-    normalizedError.includes("unauthorized") ||
-    normalizedError.includes("forbidden")
-  );
-}
+  const hfToken = process.env.HF_TOKEN;
+  const hfEndpoint = process.env.HF_MODEL_ENDPOINT;
 
-function getLatestUserMessage(messages: any[]): string {
-  if (!Array.isArray(messages)) {
-    return "";
-  }
+  const fullSystem = buildSystem(systemPrompt, contextWindow, agentId, projectName, projectGoal, mode);
 
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message && message.role === "user" && typeof message.content === "string") {
-      return message.content.trim();
-    }
-  }
-
-  return "";
-}
-
-function getContextHint(projectName: string, projectGoal: string, latestUserMessage: string): string {
-  const parts = [projectName, projectGoal, latestUserMessage].map((value) => value.trim()).filter(Boolean);
-
-  return parts.length ? parts.join(" | ") : "the current project context";
-}
-
-function hashString(input: string): number {
-  let hash = 0;
-
-  for (let index = 0; index < input.length; index += 1) {
-    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
-  }
-
-  return hash;
-}
-
-function pickVariant(options: string[], seed: string): string {
-  if (!options.length) {
-    return "";
-  }
-
-  return options[hashString(seed) % options.length];
-}
-
-function extractFocus(latestUserMessage: string, projectGoal: string, projectName: string): string {
-  const source = latestUserMessage || projectGoal || projectName;
-
-  if (!source) {
-    return "the current plan";
-  }
-
-  const sentence = source.split(/[.!?\n]/)[0].trim();
-  return sentence || source.trim();
-}
-
-// Helper to generate simulated agent responses if the Hugging Face endpoint is unreachable
-function getMockAgentResponse(
-  agentId: string,
-  projectName: string,
-  projectGoal: string,
-  messagesCount: number,
-  latestUserMessage: string
-): string {
-  const name = projectName || "the project";
-  const goal = projectGoal || "our objectives";
-  const contextHint = getContextHint(name, goal, latestUserMessage);
-  const userAsk = latestUserMessage
-    ? `The latest request I am responding to is: "${latestUserMessage}".`
-    : "I am responding to the current project context.";
-  const focusSummary = latestUserMessage || goal;
-  const focus = extractFocus(latestUserMessage, goal, name);
-  const opener = pickVariant(
-    [
-      `Here is the clearest next step on **${name}**`,
-      `I am aligning the next turn around **${focus}**`,
-      `The current discussion points to **${focus}**`,
-      `A sensible move now is to concentrate on **${focus}**`,
-    ],
-    `${agentId}:${messagesCount}:${contextHint}`
-  );
-  const transition = pickVariant(
-    [
-      "That gives us a concrete direction.",
-      "This keeps the team focused on execution.",
-      "That narrows the work to something actionable.",
-      "This is the most useful thread to pursue next.",
-    ],
-    `${messagesCount}:${latestUserMessage}`
-  );
-
-  switch (agentId) {
-    case "ceo":
-      return `${opener}. ${transition}
-
-Our goal remains: *${goal}*.
-${userAsk}
-
-PM Ghost should turn this into concrete requirements. Sales Ghost should define the market path. Recruiter Ghost should identify the next hiring need.
-
-[ADD_SUBTASK] Define product MVP roadmap
-[ADD_SUBTASK] Establish GTM and pricing tiers
-[ADD_SUBTASK] Draft talent acquisition plan
-[UPDATE_TASK] PM: Draft MVP requirements`;
-
-    case "pm":
-      return `${opener}. ${transition}
-
-The current scope for **${name}** should prioritize the work around: ${focus}.
-
-Proposed breakdown:
-
-1. Capture the core user flow.
-2. Define the minimum API and data shape.
-3. Confirm the delivery order and dependencies.
-
-${pickVariant([
-  "That should keep the MVP tight and shippable.",
-  "This keeps the scope disciplined.",
-  "That gives the team a practical implementation path.",
-], `${agentId}:${messagesCount}:${focus}`)} Sales Ghost can now translate this into pricing and demand language.
-
-[COMPLETE_SUBTASK] Define product MVP roadmap
-[UPDATE_TASK] Sales: Formulate pricing and GTM strategy`;
-
-    case "sales":
-      return `${opener}. ${transition}
-
-For **${name}**, the most commercial angle is tied to ${focus}.
-
-Recommended market framing:
-
-- Starter tier for a small team validating the workflow.
-- Growth tier for teams that need higher throughput and visibility.
-- Outreach aimed at managers who feel the pain that ${focus} solves.
-
-Recruiter Ghost should now map the hiring needs that support that promise.
-
-[COMPLETE_SUBTASK] Establish GTM and pricing tiers
-[UPDATE_TASK] Recruiter: Outline talent sourcing pipeline`;
-
-    case "recruiter":
-      return `${opener}. ${transition}
-
-The talent plan for **${name}** should support ${focus} without overbuilding the team.
-
-Suggested hiring sequence:
-
-1. One senior engineer who can own the core implementation.
-2. One growth-oriented operator if demand generation becomes a bottleneck.
-3. Optional support roles only after the first feedback loop proves value.
-
-This keeps the team lean while the project direction is still forming.
-
-[UPDATE_TASK] CEO: Synthesize boardroom decisions`;
-
-    default:
-      return `${opener}. ${transition}
-
-I will keep the next step tied to: ${focusSummary}.`;
-  }
-}
-
-export async function POST(request: Request) {
-  let requestData: any = {};
-  try {
-    requestData = await request.json();
-  } catch (error) {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const { messages, systemPrompt, agentId, projectName, projectGoal } = requestData;
-  const token = process.env.HF_TOKEN;
-  const endpoint =
-    process.env.HF_MODEL_ENDPOINT ||
-    "https://router.huggingface.co/hf-inference/models/Qwen/Qwen2.5-7B-Instruct/v1/chat/completions";
-
-  const latestUserMessage = getLatestUserMessage(messages || []);
-
-  if (!token || token === "your_huggingface_token_here") {
-    console.warn("Hugging Face API token is missing. Falling back to local simulation.");
-    const mockContent = getMockAgentResponse(
-      agentId || "ceo",
-      projectName || "Active Project",
-      projectGoal || "Complete objectives",
-      messages ? messages.length : 0,
-      latestUserMessage
-    );
-    return NextResponse.json({
-      content: mockContent,
-      isMock: true,
-      notice: "Offline Simulator Mode: Hugging Face Token is not configured.",
-    });
-  }
-
-  const formattedMessages = [];
-  if (systemPrompt) {
-    formattedMessages.push({ role: "system", content: systemPrompt });
-  }
-  if (messages && Array.isArray(messages)) {
-    formattedMessages.push(...messages);
+  if (!hfToken || !hfEndpoint) {
+    await new Promise((r) => setTimeout(r, 700 + Math.random() * 500));
+    return NextResponse.json({ content: getMock(agentId), isMock: true });
   }
 
   try {
-    const response = await fetch(endpoint, {
+    const res = await fetch(hfEndpoint, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${hfToken}` },
       body: JSON.stringify({
         model: "Qwen/Qwen2.5-7B-Instruct",
-        messages: formattedMessages,
+        messages: [{ role: "system", content: fullSystem }, ...messages.slice(-12)],
+        max_tokens: 400,
         temperature: 0.7,
-        max_tokens: 1500,
+        stream: false,
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      const permissionError = isHuggingFacePermissionError(errorText, response.status);
-
-      if (!permissionError) {
-        console.error("Hugging Face API error response:", errorText);
-      }
-
-      const mockContent = getMockAgentResponse(
-        agentId || "ceo",
-        projectName || "Active Project",
-        projectGoal || "Complete objectives",
-        messages ? messages.length : 0,
-        latestUserMessage
-      );
-
-      return NextResponse.json({
-        content: mockContent,
-        isMock: true,
-        notice: permissionError
-          ? getFallbackNotice(
-              "Hugging Face token does not have permission to call Inference Providers on behalf of this user",
-              response.status
-            )
-          : getFallbackNotice(`API error ${response.status} ${response.statusText}`, response.status),
-      });
-    }
-
-    const data = await response.json();
-
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-      return NextResponse.json({
-        content: data.choices[0].message.content,
-        isMock: false,
-      });
-    }
-
-    return NextResponse.json({
-      content: typeof data === "string" ? data : JSON.stringify(data),
-      isMock: false,
-    });
-  } catch (error: any) {
-    console.warn("Hugging Face fetch failed. Falling back to local simulation. Error cause:", error.message || error);
-
-    const mockContent = getMockAgentResponse(
-      agentId || "ceo",
-      projectName || "Active Project",
-      projectGoal || "Complete objectives",
-      messages ? messages.length : 0,
-      latestUserMessage
-    );
-
-    return NextResponse.json({
-      content: mockContent,
-      isMock: true,
-      notice: `Offline Simulator Mode: Network unreachable (${error.code || "fetch failed"}).`,
-    });
+    if (!res.ok) return NextResponse.json({ content: getMock(agentId), isMock: true });
+    const data = await res.json();
+    return NextResponse.json({ content: data.choices?.[0]?.message?.content ?? getMock(agentId), isMock: false });
+  } catch {
+    return NextResponse.json({ content: getMock(agentId), isMock: true });
   }
+}
+
+function buildSystem(base: string, ctx: any, role: string, project: string, goal: string, mode: string): string {
+  const context = ctx ? `
+=== PROJECT CONTEXT ===
+Project: ${ctx.projectName}
+Description: ${ctx.projectDescription}
+Team: ${ctx.hiredTeam}
+
+=== BOARD ROOM HISTORY ===
+${ctx.recentBoardRooms || "No previous board meetings."}
+
+=== YOUR CHAT HISTORY ===
+${ctx.agentChatHistory || "No previous chats."}
+
+=== TASKS ===
+${ctx.tasks || "No tasks yet."}
+=== END CONTEXT ===` : "";
+
+  const modeNote = mode === "chat"
+    ? "You are in a 1-on-1 chat. Be conversational, helpful, draw on full context."
+    : "You are in a board meeting. Be concise (3-5 sentences). Reference what teammates said. End with a clear recommendation.";
+
+  return `${base}\n${context}\n${modeNote}\nCurrent goal: "${goal}"\nAlways respond in character. Keep responses focused and actionable.`;
 }
