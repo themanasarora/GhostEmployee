@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCalendarStatus, listCalendarEvents } from "@/lib/server/googleCalendar";
 
 const MOCK: Record<string, string[]> = {
   ceo: ["As CEO, I see a clear strategic opportunity here. We should prioritize the core value proposition, validate with 10 target customers before building, and set a 6-week MVP timeline. My recommendation: proceed with a focused niche approach.", "Looking at the full picture, I recommend we move forward. The market timing is right, technical complexity is manageable, and our angle is differentiated. Let's assign tasks and execute."],
@@ -18,12 +19,41 @@ function getMock(role: string): string {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { messages = [], systemPrompt, agentId, projectName, projectGoal, contextWindow, mode = "board" } = body;
+  const { messages = [], systemPrompt, agentId, projectName, projectGoal, contextWindow, mode = "board", userId } = body;
 
   const hfToken = process.env.HF_TOKEN;
   const hfEndpoint = process.env.HF_MODEL_ENDPOINT;
 
-  const fullSystem = buildSystem(systemPrompt, contextWindow, agentId, projectName, projectGoal, mode);
+  let calendarContext = "";
+  if (userId) {
+    try {
+      const status = await getCalendarStatus(userId);
+      if (status.connected) {
+        const eventsData = await listCalendarEvents(userId);
+        const events = eventsData.data?.items || [];
+        if (events.length > 0) {
+          const eventsList = events.map((e: any) => {
+            const start = e.start?.dateTime || e.start?.date || "N/A";
+            const end = e.end?.dateTime || e.end?.date || "N/A";
+            const summary = e.summary || "(No Title)";
+            const desc = e.description ? ` - ${e.description}` : "";
+            const att = e.attendees ? ` (Attendees: ${e.attendees.map((a: any) => a.email).join(", ")})` : "";
+            return `- [${start} to ${end}] ${summary}${desc}${att} (Event ID: ${e.id})`;
+          }).join("\n");
+          calendarContext = `\n=== GOOGLE CALENDAR UPCOMING EVENTS ===\n${eventsList}\n=== END CALENDAR EVENTS ===\n`;
+        } else {
+          calendarContext = "\n=== GOOGLE CALENDAR UPCOMING EVENTS ===\nNo upcoming meetings or events scheduled.\n=== END CALENDAR EVENTS ===\n";
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load calendar events for chat context:", e);
+    }
+  }
+
+  let fullSystem = buildSystem(systemPrompt, contextWindow, agentId, projectName, projectGoal, mode);
+  if (calendarContext) {
+    fullSystem += `\n${calendarContext}`;
+  }
 
   if (!hfToken || !hfEndpoint) {
     await new Promise((r) => setTimeout(r, 700 + Math.random() * 500));

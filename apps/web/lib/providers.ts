@@ -85,9 +85,9 @@ export const PROVIDERS: ProviderDefinition[] = [
     name: "Google Calendar",
     kind: "oauth",
     description: "Use Google OAuth for calendar scheduling and meeting actions.",
-    status: "planned",
+    status: "ready",
     scopes: ["calendar.events", "calendar.readonly"],
-    nextStep: "Wire Google Calendar OAuth after Gmail and map scheduling actions.",
+    nextStep: "Google Calendar connected successfully. Agents can now view, schedule, and update events.",
   },
   {
     id: "slack",

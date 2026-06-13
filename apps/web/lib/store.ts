@@ -56,6 +56,7 @@ export interface Task {
   startedAt?: number;
   completedAt?: number;
   logs: TaskLogEntry[];
+  payload?: any;
 }
 
 export interface TaskLogEntry {

@@ -1,0 +1,40 @@
+{
+  "UAj7vdZUeYc0MzQ8reL2IqLTpIq1": {
+    "userId": "UAj7vdZUeYc0MzQ8reL2IqLTpIq1",
+    "email": "a7nonymous777@gmail.com",
+    "label": "Anonymous ,",
+    "accountHint": "a7nonymous777@gmail.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "openid",
+      "https://www.googleapis.com/auth/gmail.compose",
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/calendar.readonly"
+    ],
+    "connectedAt": 1781361234903,
+    "lastUsedAt": 1781366975819,
+    "refreshToken": "gULtcvOxNmBBk7I2.Rt4jJ7c-4mYH4EwvfFQ2bKocOvyn2f8mMVQjGxgzZPAfDgVyewLsKZz0y4s87kTiNAX_pXby4JxD_CkjZ9eLKxkzhq52SIWommi7LY4awjPrwhieE04RQIVa2-rgAoLvKs3gY6qx_A.39vqegHN_1lX7aV7MEbeyw"
+  },
+  "iVAkn0y7bzatliKM8VQJrcbBura2": {
+    "userId": "iVAkn0y7bzatliKM8VQJrcbBura2",
+    "email": "a7nonymous777@gmail.com",
+    "label": "Anonymous ,",
+    "accountHint": "a7nonymous777@gmail.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/gmail.compose",
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "openid",
+      "https://www.googleapis.com/auth/calendar.events"
+    ],
+    "connectedAt": 1781362545359,
+    "lastUsedAt": 1781362662407,
+    "refreshToken": "q3es9Ip0BblPDyb5.xHFJB5Bz6ddCdybx2fDj7x_4Dhxpl5R4yv1g_nEhPIMnZRMO9Xq6wFLMDh6YFMOyx3OOnMr-gY3_VMOu38sc7a04xiq0O73yfFIi6nU64u7xAIlido6E0vh9DfoxQUtBi1eBXooewg.ZyV_oCBZ27IhMbp0MRpg8w"
+  }
+}

@@ -85,6 +85,7 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
           projectGoal: g.text,
           contextWindow: ctx,
           mode: "board",
+          userId: user?.uid,
         }),
       });
       const data = await res.json();

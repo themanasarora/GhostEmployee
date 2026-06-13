@@ -25,26 +25,51 @@ export default function SettingsPage() {
   }, [authUser?.uid]);
 
   useEffect(() => {
-    async function syncGmail() {
+    async function syncProviders() {
       if (!authUser?.uid) return;
-      const response = await fetch(`/api/gmail/status?userId=${encodeURIComponent(authUser.uid)}`);
-      const data = await response.json();
-      if (data.connected) {
-        const provider = PROVIDERS.find((item) => item.id === "gmail");
-        setProviderConnection(authUser.uid, {
-          providerId: "gmail",
-          connected: true,
-          connectedAt: data.connectedAt ?? Date.now(),
-          label: data.label ?? "Gmail",
-          accountHint: data.accountHint ?? authUser.email ?? undefined,
-          scopes: data.scopes ?? provider?.scopes,
-          lastUsedAt: data.lastUsedAt ?? data.connectedAt ?? Date.now(),
-        });
-        setConnections(getProviderConnections(authUser.uid));
+      
+      try {
+        const response = await fetch(`/api/gmail/status?userId=${encodeURIComponent(authUser.uid)}`);
+        const data = await response.json();
+        if (data.connected) {
+          const provider = PROVIDERS.find((item) => item.id === "gmail");
+          setProviderConnection(authUser.uid, {
+            providerId: "gmail",
+            connected: true,
+            connectedAt: data.connectedAt ?? Date.now(),
+            label: data.label ?? "Gmail",
+            accountHint: data.accountHint ?? authUser.email ?? undefined,
+            scopes: data.scopes ?? provider?.scopes,
+            lastUsedAt: data.lastUsedAt ?? data.connectedAt ?? Date.now(),
+          });
+        }
+      } catch (e) {
+        console.error("Failed to sync Gmail status", e);
       }
+
+      try {
+        const response = await fetch(`/api/calendar/status?userId=${encodeURIComponent(authUser.uid)}`);
+        const data = await response.json();
+        if (data.connected) {
+          const provider = PROVIDERS.find((item) => item.id === "googleCalendar");
+          setProviderConnection(authUser.uid, {
+            providerId: "googleCalendar",
+            connected: true,
+            connectedAt: data.connectedAt ?? Date.now(),
+            label: data.label ?? "Google Calendar",
+            accountHint: data.accountHint ?? authUser.email ?? undefined,
+            scopes: data.scopes ?? provider?.scopes,
+            lastUsedAt: data.lastUsedAt ?? data.connectedAt ?? Date.now(),
+          });
+        }
+      } catch (e) {
+        console.error("Failed to sync Google Calendar status", e);
+      }
+
+      setConnections(getProviderConnections(authUser.uid));
     }
 
-    void syncGmail();
+    void syncProviders();
   }, [authUser?.uid]);
 
   const connectedCount = useMemo(() => Object.values(connections).filter((connection) => connection?.connected).length, [connections]);
@@ -58,6 +83,10 @@ export default function SettingsPage() {
     if (!authUser?.uid) return;
     if (providerId === "gmail") {
       window.location.href = `/api/gmail/connect/start?userId=${encodeURIComponent(authUser.uid)}&returnTo=${encodeURIComponent("/settings")}`;
+      return;
+    }
+    if (providerId === "googleCalendar") {
+      window.location.href = `/api/calendar/connect/start?userId=${encodeURIComponent(authUser.uid)}&returnTo=${encodeURIComponent("/settings")}`;
       return;
     }
     const provider = PROVIDERS.find((item) => item.id === providerId);
@@ -77,6 +106,9 @@ export default function SettingsPage() {
     if (!authUser?.uid) return;
     if (providerId === "gmail") {
       void fetch(`/api/gmail/disconnect?userId=${encodeURIComponent(authUser.uid)}`, { method: "POST" });
+    }
+    if (providerId === "googleCalendar") {
+      void fetch(`/api/calendar/disconnect?userId=${encodeURIComponent(authUser.uid)}`, { method: "POST" });
     }
     clearProviderConnection(authUser.uid, providerId);
     refreshConnections();

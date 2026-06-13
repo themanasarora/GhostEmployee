@@ -62,6 +62,7 @@ You have full context of all board meetings and tasks. Be conversational, helpfu
           systemPrompt, agentId: role, projectName: project.name,
           projectGoal: project.goals[0]?.text ?? "General project discussion",
           contextWindow: ctx, mode: "chat",
+          userId: user?.uid,
         }),
       });
       const data = await res.json();

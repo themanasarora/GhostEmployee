@@ -18,6 +18,7 @@ import {
   resolveTaskApproval,
   deliverTaskArtifact,
   appendTaskLog,
+  getTaskById,
 } from "@/lib/store";
 import { getProviderConnections, mapActionToProvider } from "@/lib/providers";
 import { useState, useEffect } from "react";
@@ -38,6 +39,17 @@ type EmailDraft = {
   to: string;
   subject: string;
   body: string;
+};
+
+type CalendarAction = "list" | "create" | "update" | "delete";
+
+type CalendarEvent = {
+  id: string;
+  summary: string;
+  description: string;
+  start: string;
+  end: string;
+  attendees: string;
 };
 
 const ACTIONS: Array<{ value: TaskAction; label: string; detail: string }> = [
@@ -118,6 +130,15 @@ export default function TaskLogPage() {
   const [source, setSource] = useState<TaskSource>("user");
   const [emailDraft, setEmailDraft] = useState<EmailDraft>({ to: "", subject: "", body: "" });
   const [emailDeliveryMode, setEmailDeliveryMode] = useState<EmailDeliveryMode>("draft");
+  const [calendarAction, setCalendarAction] = useState<CalendarAction>("list");
+  const [calendarEvent, setCalendarEvent] = useState<CalendarEvent>({
+    id: "",
+    summary: "",
+    description: "",
+    start: "",
+    end: "",
+    attendees: "",
+  });
   const [needsApproval, setNeedsApproval] = useState(false);
   const [approvalReason, setApprovalReason] = useState("");
   const [activeApprovalTaskId, setActiveApprovalTaskId] = useState<string | null>(null);
@@ -172,6 +193,16 @@ export default function TaskLogPage() {
       title: title.trim(),
       description: action === "email"
         ? `${description.trim() || getActionDetail(action)}\n\nEmail draft\nTo: ${emailDraft.to || "(recipient needed)"}\nSubject: ${emailDraft.subject || title.trim()}\nBody: ${emailDraft.body || description.trim() || getActionDetail(action)}`
+        : action === "calendar"
+        ? `${description.trim() || getActionDetail(action)}\n\nCalendar Action: ${calendarAction}\n${
+            calendarAction === "create"
+              ? `Title: ${calendarEvent.summary}\nStart: ${calendarEvent.start}\nEnd: ${calendarEvent.end}\nAttendees: ${calendarEvent.attendees}\nDetails: ${calendarEvent.description}`
+              : calendarAction === "update"
+              ? `Event ID: ${calendarEvent.id}\nNew Title: ${calendarEvent.summary || "(no change)"}\nNew Start: ${calendarEvent.start || "(no change)"}\nNew End: ${calendarEvent.end || "(no change)"}`
+              : calendarAction === "delete"
+              ? `Cancel Event ID: ${calendarEvent.id}`
+              : "List upcoming events"
+          }`
         : description.trim() || getActionDetail(action),
       deliveryMode: action === "email" ? emailDeliveryMode : undefined,
       status: needsApproval ? "waiting_approval" : "pending",
@@ -180,6 +211,7 @@ export default function TaskLogPage() {
       output: undefined,
       startedAt: undefined,
       completedAt: undefined,
+      payload: action === "email" ? { emailDraft, emailDeliveryMode } : action === "calendar" ? { calendarAction, calendarEvent } : undefined,
     });
 
     if (needsApproval) {
@@ -207,6 +239,8 @@ export default function TaskLogPage() {
     setSource("user");
     setEmailDraft({ to: "", subject: "", body: "" });
     setEmailDeliveryMode("draft");
+    setCalendarAction("list");
+    setCalendarEvent({ id: "", summary: "", description: "", start: "", end: "", attendees: "" });
     setNeedsApproval(false);
     setApprovalReason("");
     setShowComposer(false);
@@ -270,6 +304,15 @@ export default function TaskLogPage() {
   ) {
     const assigneeName = getEmployeeDetails(assigneeRole).name;
     const providerConnected = actionType === "report" ? true : Boolean(providerConnectionFor(actionType)?.connected);
+    
+    // Retrieve stored task details or fall back to current form states
+    const taskObj = getTaskById(userId, projectId, taskId)?.task;
+    const taskPayload = taskObj?.payload;
+    const activeEmailDraft = taskPayload?.emailDraft || { ...emailDraft };
+    const activeEmailDeliveryMode = taskPayload?.emailDeliveryMode || emailDeliveryMode;
+    const activeCalendarAction = taskPayload?.calendarAction || calendarAction;
+    const activeCalendarEvent = taskPayload?.calendarEvent || { ...calendarEvent };
+
     markTaskRunning(userId, projectId, goalId, taskId, `Assigned to ${assigneeName}.`);
     appendTaskLog(userId, projectId, goalId, taskId, {
       title: "Agent picked up task",
@@ -279,8 +322,8 @@ export default function TaskLogPage() {
     });
 
     window.setTimeout(() => {
-      if (actionType === "email" && providerConnected) {
-        const route = taskDescription.toLowerCase().includes("draft") || emailDeliveryMode === "draft" ? "/api/gmail/draft" : "/api/gmail/send";
+      if (actionType === "email") {
+        const route = taskDescription.toLowerCase().includes("draft") || activeEmailDeliveryMode === "draft" ? "/api/gmail/draft" : "/api/gmail/send";
         void (async () => {
           try {
             const response = await fetch(route, {
@@ -288,9 +331,9 @@ export default function TaskLogPage() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 userId,
-                to: emailDraft.to,
-                subject: emailDraft.subject || taskTitle,
-                body: emailDraft.body || taskDescription,
+                to: activeEmailDraft.to,
+                subject: activeEmailDraft.subject || taskTitle,
+                body: activeEmailDraft.body || taskDescription,
               }),
             });
             const data = await response.json();
@@ -306,15 +349,15 @@ export default function TaskLogPage() {
               updateTaskFailure(userId, projectId, goalId, taskId, errorMessage);
               deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
                 title: `${taskTitle} failed`,
-                content: `Gmail ${route.includes("draft") ? "draft" : "send"} failed.\n\nError: ${errorMessage}\n\nRecipient: ${emailDraft.to || "(not set)"}\nSubject: ${emailDraft.subject || taskTitle}`,
+                content: `Gmail ${route.includes("draft") ? "draft" : "send"} failed.\n\nError: ${errorMessage}\n\nRecipient: ${activeEmailDraft.to || "(not set)"}\nSubject: ${activeEmailDraft.subject || taskTitle}`,
               });
               done();
               return;
             }
 
             const resultText = route.includes("draft")
-              ? `Draft created in Gmail for ${emailDraft.to || "recipient not set"}`
-              : `Email sent to ${emailDraft.to || "recipient not set"}`;
+              ? `Draft created in Gmail for ${activeEmailDraft.to || "recipient not set"}`
+              : `Email sent to ${activeEmailDraft.to || "recipient not set"}`;
 
             appendTaskLog(userId, projectId, goalId, taskId, {
               title: route.includes("draft") ? "Gmail draft created" : "Gmail message sent",
@@ -325,7 +368,7 @@ export default function TaskLogPage() {
             completeTask(userId, projectId, goalId, taskId, resultText);
             deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
               title: `${taskTitle} artifact`,
-              content: `${route.includes("draft") ? "Gmail draft" : "Gmail message"} ${route.includes("draft") ? "created" : "sent"} successfully.\n\nRecipient: ${emailDraft.to || "(not set)"}\nSubject: ${emailDraft.subject || taskTitle}\nMode: ${emailDeliveryMode}\n\nResponse:\n${JSON.stringify(data, null, 2)}`,
+              content: `${route.includes("draft") ? "Gmail draft" : "Gmail message"} ${route.includes("draft") ? "created" : "sent"} successfully.\n\nRecipient: ${activeEmailDraft.to || "(not set)"}\nSubject: ${activeEmailDraft.subject || taskTitle}\nMode: ${activeEmailDeliveryMode}\n\nResponse:\n${JSON.stringify(data, null, 2)}`,
             });
             done();
           } catch (gmailError) {
@@ -339,7 +382,126 @@ export default function TaskLogPage() {
             updateTaskFailure(userId, projectId, goalId, taskId, errorMessage);
             deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
               title: `${taskTitle} failed`,
-              content: `Gmail execution failed.\n\nError: ${errorMessage}\n\nRecipient: ${emailDraft.to || "(not set)"}\nSubject: ${emailDraft.subject || taskTitle}\nMode: ${emailDeliveryMode}`,
+              content: `Gmail execution failed.\n\nError: ${errorMessage}\n\nRecipient: ${activeEmailDraft.to || "(not set)"}\nSubject: ${activeEmailDraft.subject || taskTitle}\nMode: ${activeEmailDeliveryMode}`,
+            });
+            done();
+          }
+        })();
+        return;
+      }
+
+      if (actionType === "calendar") {
+        void (async () => {
+          let route = "/api/calendar/events";
+          let payload: any = { userId };
+          const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          
+          if (activeCalendarAction === "create") {
+            payload = {
+              userId,
+              summary: activeCalendarEvent.summary || taskTitle,
+              description: activeCalendarEvent.description || taskDescription,
+              start: activeCalendarEvent.start,
+              end: activeCalendarEvent.end,
+              attendees: activeCalendarEvent.attendees ? activeCalendarEvent.attendees.split(",").map(e => e.trim()) : [],
+              timeZone,
+            };
+          } else if (activeCalendarAction === "update") {
+            route = "/api/calendar/events/update";
+            payload = {
+              userId,
+              eventId: activeCalendarEvent.id,
+              summary: activeCalendarEvent.summary || undefined,
+              start: activeCalendarEvent.start || undefined,
+              end: activeCalendarEvent.end || undefined,
+              timeZone,
+            };
+          } else if (activeCalendarAction === "delete") {
+            route = "/api/calendar/events/delete";
+            payload = {
+              userId,
+              eventId: activeCalendarEvent.id,
+            };
+          }
+
+          try {
+            let method = "POST";
+            let url = route;
+            if (activeCalendarAction === "list") {
+              method = "GET";
+              url = `/api/calendar/events?userId=${encodeURIComponent(userId)}`;
+            }
+
+            const response = await fetch(url, {
+              method,
+              headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
+              body: method === "POST" ? JSON.stringify(payload) : undefined,
+            });
+            const data = await response.json();
+
+            if (!response.ok || !data.ok) {
+              const errorMessage = data.error || "Google Calendar request failed.";
+              appendTaskLog(userId, projectId, goalId, taskId, {
+                title: "Calendar error",
+                detail: errorMessage,
+                level: "error",
+                role: assigneeRole,
+              });
+              updateTaskFailure(userId, projectId, goalId, taskId, errorMessage);
+              deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
+                title: `${taskTitle} failed`,
+                content: `Google Calendar action "${activeCalendarAction}" failed.\n\nError: ${errorMessage}`,
+              });
+              done();
+              return;
+            }
+
+            let resultText = `Google Calendar action "${activeCalendarAction}" executed successfully.`;
+            let artifactContent = `Calendar action "${activeCalendarAction}" completed.\n\nResponse:\n${JSON.stringify(data, null, 2)}`;
+
+            if (activeCalendarAction === "list") {
+              const items = data.data?.items || [];
+              resultText = `Retrieved ${items.length} upcoming events from Google Calendar.`;
+              artifactContent = `Google Calendar Upcoming Events:\n\n` + 
+                items.map((item: any) => {
+                  const start = item.start?.dateTime || item.start?.date || "N/A";
+                  const end = item.end?.dateTime || item.end?.date || "N/A";
+                  const sum = item.summary || "(No Title)";
+                  return `- [${start} to ${end}] ${sum} (ID: ${item.id})`;
+                }).join("\n");
+            } else if (activeCalendarAction === "create") {
+              resultText = `Scheduled new event "${data.data?.summary || activeCalendarEvent.summary}" (ID: ${data.data?.id})`;
+              artifactContent = `Event Scheduled Successfully:\n\nEvent: ${data.data?.summary}\nStart: ${data.data?.start?.dateTime}\nEnd: ${data.data?.end?.dateTime}\nLink: ${data.data?.htmlLink || "N/A"}\nEvent ID: ${data.data?.id}`;
+            } else if (activeCalendarAction === "update") {
+              resultText = `Updated event details for Event ID: ${activeCalendarEvent.id}`;
+            } else if (activeCalendarAction === "delete") {
+              resultText = `Deleted/canceled event with Event ID: ${activeCalendarEvent.id}`;
+            }
+
+            appendTaskLog(userId, projectId, goalId, taskId, {
+              title: `Google Calendar ${activeCalendarAction} success`,
+              detail: resultText,
+              level: "success",
+              role: assigneeRole,
+            });
+            completeTask(userId, projectId, goalId, taskId, resultText);
+            deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
+              title: `${taskTitle} artifact`,
+              content: artifactContent,
+            });
+            done();
+          } catch (calError) {
+            const errorMessage = calError instanceof Error ? calError.message : "Unknown Calendar error.";
+            appendTaskLog(userId, projectId, goalId, taskId, {
+              title: "Calendar error",
+              detail: errorMessage,
+              level: "error",
+              role: assigneeRole,
+            });
+            updateTaskFailure(userId, projectId, goalId, taskId, errorMessage);
+            deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
+              title: `${taskTitle} failed`,
+              content: `Google Calendar execution failed.\n\nError: ${errorMessage}`,
             });
             done();
           }
@@ -350,6 +512,8 @@ export default function TaskLogPage() {
       const execution = buildExecutionNote(taskTitle, actionType, assigneeName, providerConnected);
       const draftBlock = actionType === "email"
         ? `\n\nDraft details:\nTo: ${emailDraft.to || "(recipient not set)"}\nSubject: ${emailDraft.subject || taskTitle}\nBody: ${emailDraft.body || taskDescription}`
+        : actionType === "calendar"
+        ? `\n\nCalendar Action details:\nAction: ${calendarAction}\nTitle: ${calendarEvent.summary || "(not set)"}\nStart: ${calendarEvent.start || "(not set)"}\nEnd: ${calendarEvent.end || "(not set)"}`
         : "";
       appendTaskLog(userId, projectId, goalId, taskId, {
         title: execution.placeholder ? (providerConnected ? "Provider connected, adapter pending" : "Placeholder execution used") : "Provider execution used",
@@ -553,7 +717,7 @@ export default function TaskLogPage() {
       {showComposer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={() => setShowComposer(false)} />
-          <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-white/15 bg-[#0F0F1A] shadow-2xl p-6">
+          <div className="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/15 bg-[#0F0F1A] shadow-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-base font-bold text-white">Create executable task</h2>
@@ -599,6 +763,42 @@ export default function TaskLogPage() {
                     <label className="text-sm font-medium text-slate-300">Body</label>
                     <textarea value={emailDraft.body} onChange={(e) => setEmailDraft((prev) => ({ ...prev, body: e.target.value }))} rows={4} placeholder="Write the email body the agent should draft or send." className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E94560] resize-none" />
                   </div>
+                </>
+              )}
+              {action === "calendar" && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium text-slate-300">Calendar Action</label>
+                    <select value={calendarAction} onChange={(e) => setCalendarAction(e.target.value as CalendarAction)} className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E94560]">
+                      <option value="list">List upcoming events</option>
+                      <option value="create">Schedule new event</option>
+                      <option value="update">Update existing event</option>
+                      <option value="delete">Cancel/delete event</option>
+                    </select>
+                  </div>
+                  {calendarAction === "create" && (
+                    <>
+                      <Input label="Event Title" placeholder="Sync Meeting" value={calendarEvent.summary} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, summary: e.target.value }))} />
+                      <Input label="Attendees (comma separated emails)" placeholder="pm@company.com, ceo@company.com" value={calendarEvent.attendees} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, attendees: e.target.value }))} />
+                      <Input label="Start Date/Time" type="datetime-local" value={calendarEvent.start} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, start: e.target.value }))} />
+                      <Input label="End Date/Time" type="datetime-local" value={calendarEvent.end} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, end: e.target.value }))} />
+                      <div className="md:col-span-2 flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-slate-300">Event Description</label>
+                        <textarea value={calendarEvent.description} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, description: e.target.value }))} rows={3} placeholder="Discuss MVP release roadmap." className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E94560] resize-none" />
+                      </div>
+                    </>
+                  )}
+                  {calendarAction === "update" && (
+                    <>
+                      <Input label="Event ID" placeholder="Google Calendar Event ID" value={calendarEvent.id} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, id: e.target.value }))} />
+                      <Input label="New Title (optional)" placeholder="New Sync Meeting" value={calendarEvent.summary} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, summary: e.target.value }))} />
+                      <Input label="New Start Date/Time (optional)" type="datetime-local" value={calendarEvent.start} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, start: e.target.value }))} />
+                      <Input label="New End Date/Time (optional)" type="datetime-local" value={calendarEvent.end} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, end: e.target.value }))} />
+                    </>
+                  )}
+                  {calendarAction === "delete" && (
+                    <Input label="Event ID to Cancel" placeholder="Google Calendar Event ID" value={calendarEvent.id} onChange={(e) => setCalendarEvent((prev) => ({ ...prev, id: e.target.value }))} />
+                  )}
                 </>
               )}
               <div className="md:col-span-2 flex flex-col gap-1.5">
