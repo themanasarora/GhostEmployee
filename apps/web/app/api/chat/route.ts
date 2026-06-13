@@ -66,6 +66,9 @@ ${ctx.agentChatHistory || "No previous chats."}
 
 === TASKS ===
 ${ctx.tasks || "No tasks yet."}
+
+=== TASK EVENTS ===
+${ctx.taskEvents || "No task events yet."}
 === END CONTEXT ===` : "";
 
   const modeNote = mode === "chat"

@@ -6,8 +6,9 @@ import { getProject, getAgentChat, addAgentChatMessage, buildContextWindow, getE
 import { EMPLOYEES } from "@/lib/plans";
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Send, FileText, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { downloadTextFile } from "@/lib/utils";
 
 export default function AgentChatPage() {
   const { id, role } = useParams<{ id: string; role: string }>();
@@ -149,16 +150,35 @@ You have full context of all board meetings and tasks. Be conversational, helpfu
 
             {messages.map((msg, i) => {
               const isUser = msg.sender === "user";
+              const isArtifact = msg.kind === "artifact";
               return (
                 <div key={msg.id || i} className={cn("flex gap-3", isUser && "justify-end")}>
                   {!isUser && (
                     <div className="size-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-base shrink-0 mt-0.5">{emp.icon}</div>
                   )}
                   <div className={cn("max-w-[80%]", isUser && "items-end flex flex-col")}>
-                    <div className={cn("rounded-2xl px-4 py-2.5",
-                      isUser ? "bg-[#E94560]/15 border border-[#E94560]/20 rounded-br-sm" : "bg-white/[0.03] border border-white/10 rounded-tl-sm")}>
-                      <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                    </div>
+                    {isArtifact ? (
+                      <div className="rounded-2xl rounded-tl-sm border border-[#E94560]/20 bg-[#E94560]/10 px-4 py-3">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="flex items-center gap-2">
+                            <FileText className="size-4 text-[#E94560]" />
+                            <p className="text-sm font-medium text-white">{msg.artifactTitle || "Generated artifact"}</p>
+                          </div>
+                          <button
+                            onClick={() => downloadTextFile(`${(msg.artifactTitle || "artifact").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase()}.txt`, msg.content)}
+                            className="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full bg-white/10 text-white hover:bg-white/15 transition-colors"
+                          >
+                            <Download className="size-3" /> Download
+                          </button>
+                        </div>
+                        <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                      </div>
+                    ) : (
+                      <div className={cn("rounded-2xl px-4 py-2.5",
+                        isUser ? "bg-[#E94560]/15 border border-[#E94560]/20 rounded-br-sm" : "bg-white/[0.03] border border-white/10 rounded-tl-sm")}> 
+                        <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5 mt-1">
                       {msg.isMock && <span className="text-[9px] text-slate-600 bg-white/5 px-1.5 py-0.5 rounded">sim</span>}
                       <span className="text-[10px] text-slate-600">{new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
