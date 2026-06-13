@@ -17,25 +17,36 @@ function getMock(role: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  console.log("=== AI CALL START ===");
+
   const body = await req.json();
   const { messages = [], systemPrompt, agentId, projectName, projectGoal, contextWindow, mode = "board" } = body;
 
   const hfToken = process.env.HF_TOKEN;
   const hfEndpoint = process.env.HF_MODEL_ENDPOINT;
 
+  console.log("HF_TOKEN present:", !!hfToken);
+  console.log("HF_ENDPOINT present:", !!hfEndpoint);
+  console.log("AgentId:", agentId);
+
   const fullSystem = buildSystem(systemPrompt, contextWindow, agentId, projectName, projectGoal, mode);
 
   if (!hfToken || !hfEndpoint) {
+    console.log("No token/endpoint — using mock");
     await new Promise((r) => setTimeout(r, 700 + Math.random() * 500));
     return NextResponse.json({ content: getMock(agentId), isMock: true });
   }
 
   try {
+    console.log("Calling HF API...");
     const res = await fetch(hfEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${hfToken}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${hfToken}`,
+      },
       body: JSON.stringify({
-        model: "Qwen/Qwen2.5-7B-Instruct",
+        model: "llama-3.1-8b-instant",
         messages: [{ role: "system", content: fullSystem }, ...messages.slice(-12)],
         max_tokens: 400,
         temperature: 0.7,
@@ -43,10 +54,22 @@ export async function POST(req: NextRequest) {
       }),
     });
 
-    if (!res.ok) return NextResponse.json({ content: getMock(agentId), isMock: true });
+    console.log("HF response status:", res.status);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.log("HF API error:", res.status, errText);
+      return NextResponse.json({ content: getMock(agentId), isMock: true });
+    }
+
     const data = await res.json();
-    return NextResponse.json({ content: data.choices?.[0]?.message?.content ?? getMock(agentId), isMock: false });
-  } catch {
+    console.log("HF success, content length:", data.choices?.[0]?.message?.content?.length);
+    return NextResponse.json({
+      content: data.choices?.[0]?.message?.content ?? getMock(agentId),
+      isMock: false,
+    });
+  } catch (err) {
+    console.log("HF fetch threw error:", err);
     return NextResponse.json({ content: getMock(agentId), isMock: true });
   }
 }

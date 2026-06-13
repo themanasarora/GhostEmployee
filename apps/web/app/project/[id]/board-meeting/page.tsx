@@ -65,6 +65,7 @@ Reference what previous team members said if relevant. End with a clear recommen
           agentId: agentRole,
           projectName,
           projectGoal: goal,
+          userId: user?.uid,
         }),
       });
       const data = await res.json();
