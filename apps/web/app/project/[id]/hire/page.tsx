@@ -36,6 +36,7 @@ export default function HireTeamPage() {
 
   function toggle(role: EmployeeRole) {
     if (REQUIRED.includes(role)) return;
+    if (projectPlan === "basic" && !["ceo", "pm", "research", "growth"].includes(role)) return;
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(role) ? next.delete(role) : next.add(role);
