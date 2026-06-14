@@ -1,0 +1,10 @@
+{
+  "KdviJgvhNOeUU1UM9DpWfsSu71j2": {
+    "userId": "KdviJgvhNOeUU1UM9DpWfsSu71j2",
+    "webhookUrl": "SLACK_WEBHOOK_URL",
+    "channel": "#all-rishi",
+    "notifyOn": "All events",
+    "connectedAt": 1781379681817,
+    "lastUsedAt": 1781421201201
+  }
+}
