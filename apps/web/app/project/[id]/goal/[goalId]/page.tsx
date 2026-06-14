@@ -10,6 +10,7 @@ import {
 } from "@/lib/store";
 import { EMPLOYEES } from "@/lib/plans";
 import { triggerSalesWorkflow } from "@/lib/workflows/salesWorkflow";
+import { triggerRecruiterWorkflow } from "@/lib/workflows/recruiterWorkflow";
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ArrowLeft, Send, Zap, AtSign, MessageSquare } from "lucide-react";
@@ -99,14 +100,16 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
 
   async function checkAndTriggerWorkflow(p: Project, g: Goal) {
     if (workflowTriggered) return;
-    if (!p.hiredRoles.includes("sales")) return;
 
     const trigger = detectWorkflowTrigger(g.boardMessages);
     if (!trigger.shouldTrigger || !trigger.role) return;
 
-    // Only trigger once per board room
-    const alreadyTriggered = g.tasks.some((t) => t.assignedRole === "sales");
+    // Only trigger once per role per board room
+    const alreadyTriggered = g.tasks.some((t) => t.assignedRole === trigger.role);
     if (alreadyTriggered) return;
+
+    // Check if the role is hired
+    if (!p.hiredRoles.includes(trigger.role)) return;
 
     setWorkflowTriggered(true);
 
@@ -115,13 +118,24 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
       .map((m) => `[${m.senderName}]: ${m.content}`)
       .join("\n");
 
-    await triggerSalesWorkflow({
-      userId: user!.uid,
-      projectId: id,
-      goalId,
-      goalText: g.text,
-      boardContext,
-    });
+    if (trigger.role === "recruiter") {
+      await triggerRecruiterWorkflow({
+        userId: user!.uid,
+        projectId: id,
+        goalId,
+        goalText: g.text,
+        boardContext,
+        projectDescription: p.description,
+      });
+    } else if (trigger.role === "sales") {
+      await triggerSalesWorkflow({
+        userId: user!.uid,
+        projectId: id,
+        goalId,
+        goalText: g.text,
+        boardContext,
+      });
+    }
 
     refresh();
   }
@@ -227,6 +241,7 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
   );
 
   const salesTaskActive = goal.tasks.some((t) => t.assignedRole === "sales" && t.status === "running");
+  const recruiterTaskActive = goal.tasks.some((t) => t.assignedRole === "recruiter" && t.status === "running");
 
   return (
     <AppLayout projectId={id}>
@@ -249,6 +264,12 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
                   Sales workflow running
                 </span>
               )}
+              {recruiterTaskActive && (
+                <span className="flex items-center gap-1 text-xs text-[#1E90FF]">
+                  <span className="size-1.5 rounded-full bg-[#1E90FF] animate-pulse" />
+                  Recruiter screening
+                </span>
+              )}
             </div>
           </div>
           <button onClick={() => router.push(`/project/${id}/chats`)}
@@ -265,6 +286,18 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
               Sales Ghost is running a lead generation workflow.{" "}
               <button onClick={() => router.push(`/project/${id}/chat/sales`)} className="text-[#E94560] hover:underline font-medium">
                 Open Sales Ghost chat to review and approve →
+              </button>
+            </p>
+          </div>
+        )}
+
+        {recruiterTaskActive && (
+          <div className="px-5 py-2.5 bg-[#1E90FF]/10 border-b border-[#1E90FF]/20 flex items-center gap-3">
+            <span className="text-[#1E90FF] text-sm">👥</span>
+            <p className="text-xs text-slate-300">
+              Recruiter Ghost is screening candidates from your Gmail.{" "}
+              <button onClick={() => router.push(`/project/${id}/chat/recruiter`)} className="text-[#1E90FF] hover:underline font-medium">
+                Open Recruiter Ghost chat to review candidates →
               </button>
             </p>
           </div>
@@ -296,6 +329,11 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
                 {project.hiredRoles.includes("sales") && (
                   <p className="text-xs text-slate-500 mt-4 bg-white/5 border border-white/10 rounded-lg px-4 py-2">
                     Tip: Mention leads, outreach, or customers to auto-trigger the Sales Ghost workflow
+                  </p>
+                )}
+                {project.hiredRoles.includes("recruiter") && (
+                  <p className="text-xs text-slate-500 mt-2 bg-white/5 border border-white/10 rounded-lg px-4 py-2">
+                    Tip: Mention hiring, recruiting, or candidates to auto-trigger candidate screening from your Gmail
                   </p>
                 )}
               </div>

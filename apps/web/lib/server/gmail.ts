@@ -296,3 +296,130 @@ export async function sendGmailMessage(userId: string, to: string, subject: stri
   const raw = buildMimeMessage(to, subject, body);
   return gmailApiRequest(userId, "messages/send", "POST", { raw });
 }
+
+// ─── Gmail Read Operations (for recruiter workflow) ──────────────────────────
+
+/**
+ * List Gmail message IDs matching a search query.
+ * Returns an array of { id, threadId } objects.
+ */
+export async function listGmailMessages(
+  userId: string,
+  query: string,
+  maxResults = 50
+): Promise<{ id: string; threadId: string }[]> {
+  const access = await getAccessToken(userId);
+  const params = new URLSearchParams({
+    q: query,
+    maxResults: String(maxResults),
+  });
+  const response = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
+    { headers: { Authorization: `Bearer ${access.access_token}` } }
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Failed to list Gmail messages.");
+  }
+  return data.messages ?? [];
+}
+
+/**
+ * Get full details of a single Gmail message.
+ * Returns parsed headers (from, subject, date), snippet, body text, and attachment metadata.
+ */
+export async function getGmailMessageDetails(
+  userId: string,
+  messageId: string
+): Promise<{
+  id: string;
+  from: string;
+  subject: string;
+  date: string;
+  snippet: string;
+  bodyText: string;
+  attachments: { filename: string; mimeType: string; attachmentId: string; size: number }[];
+}> {
+  const access = await getAccessToken(userId);
+  const response = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
+    { headers: { Authorization: `Bearer ${access.access_token}` } }
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Failed to get Gmail message.");
+  }
+
+  // Parse headers
+  const headers = data.payload?.headers ?? [];
+  const getHeader = (name: string) =>
+    headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+
+  // Extract body text (plain text preferred, fallback to html)
+  let bodyText = "";
+  function extractBody(part: any): string {
+    if (part.mimeType === "text/plain" && part.body?.data) {
+      return Buffer.from(part.body.data, "base64url").toString("utf8");
+    }
+    if (part.parts) {
+      for (const sub of part.parts) {
+        const result = extractBody(sub);
+        if (result) return result;
+      }
+    }
+    if (part.mimeType === "text/html" && part.body?.data) {
+      // Strip HTML tags for a plain-text approximation
+      const html = Buffer.from(part.body.data, "base64url").toString("utf8");
+      return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    }
+    return "";
+  }
+  bodyText = extractBody(data.payload) || data.snippet || "";
+
+  // Extract attachment metadata
+  const attachments: { filename: string; mimeType: string; attachmentId: string; size: number }[] = [];
+  function extractAttachments(part: any) {
+    if (part.filename && part.body?.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType,
+        attachmentId: part.body.attachmentId,
+        size: part.body.size ?? 0,
+      });
+    }
+    if (part.parts) {
+      for (const sub of part.parts) extractAttachments(sub);
+    }
+  }
+  extractAttachments(data.payload);
+
+  return {
+    id: data.id,
+    from: getHeader("From"),
+    subject: getHeader("Subject"),
+    date: getHeader("Date"),
+    snippet: data.snippet ?? "",
+    bodyText: bodyText.slice(0, 3000), // Cap for LLM context
+    attachments,
+  };
+}
+
+/**
+ * Get the raw content of a Gmail attachment (returns base64-encoded data).
+ */
+export async function getGmailAttachment(
+  userId: string,
+  messageId: string,
+  attachmentId: string
+): Promise<string> {
+  const access = await getAccessToken(userId);
+  const response = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
+    { headers: { Authorization: `Bearer ${access.access_token}` } }
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Failed to get Gmail attachment.");
+  }
+  return data.data ?? ""; // base64url-encoded content
+}

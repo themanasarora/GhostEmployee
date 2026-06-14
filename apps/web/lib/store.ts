@@ -483,6 +483,19 @@ export function detectSalesIntent(text: string): boolean {
   return salesKeywords.some((kw) => lower.includes(kw));
 }
 
+export function detectRecruiterIntent(text: string): boolean {
+  const recruiterKeywords = [
+    "recruit", "recruiting", "hire", "hiring", "candidate", "candidates",
+    "resume", "resumes", "cv", "job application", "applicant", "applicants",
+    "interview", "talent", "headhunt", "source candidates",
+    "screen candidates", "ats", "scan emails for", "scan my emails",
+    "check applications", "find candidates", "new hire", "onboard",
+    "job posting", "job listing", "open position", "staffing",
+  ];
+  const lower = text.toLowerCase();
+  return recruiterKeywords.some((kw) => lower.includes(kw));
+}
+
 export function detectWorkflowTrigger(messages: Message[]): {
   shouldTrigger: boolean;
   role: EmployeeRole | null;
@@ -491,6 +504,10 @@ export function detectWorkflowTrigger(messages: Message[]): {
   const lastFew = messages.slice(-5);
   const combined = lastFew.map((m) => m.content).join(" ").toLowerCase();
 
+  // Check recruiter intent first (higher priority for this project phase)
+  if (detectRecruiterIntent(combined)) {
+    return { shouldTrigger: true, role: "recruiter", reason: "Recruiting/hiring activity detected in discussion" };
+  }
   if (detectSalesIntent(combined)) {
     return { shouldTrigger: true, role: "sales", reason: "Sales/outreach activity detected in board discussion" };
   }

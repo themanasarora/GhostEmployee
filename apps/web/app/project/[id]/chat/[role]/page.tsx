@@ -4,11 +4,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
   getProject, getAgentChat, addAgentChatMessage, buildContextWindow,
-  getEmployeeDetails, getGoal, getWorkflowFromTask,
+  getEmployeeDetails, getGoal, getWorkflowFromTask, detectRecruiterIntent,
   Project, Message, EmployeeRole
 } from "@/lib/store";
 import { EMPLOYEES } from "@/lib/plans";
 import { handleSalesApproval } from "@/lib/workflows/salesWorkflow";
+import { handleRecruiterApproval, triggerRecruiterWorkflow } from "@/lib/workflows/recruiterWorkflow";
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ArrowLeft, Send, CheckCircle2, XCircle } from "lucide-react";
@@ -73,24 +74,48 @@ export default function AgentChatPage() {
     refresh();
 
     // Check if this is an approval/rejection for an active workflow
-    if (activeWorkflow && role === "sales") {
+    if (activeWorkflow && (role === "sales" || role === "recruiter")) {
       const wf = getWorkflowFromTask(user!.uid, id, activeWorkflow.goalId, activeWorkflow.taskId);
       if (wf) {
         const goal = getGoal(user!.uid, id, activeWorkflow.goalId);
         const boardContext = goal?.boardMessages.slice(-5).map((m) => `[${m.senderName}]: ${m.content}`).join("\n") ?? "";
+        const project = getProject(user!.uid, id);
 
-        const { handled, response } = await handleSalesApproval(
-          {
-            userId: user!.uid,
-            projectId: id,
-            goalId: activeWorkflow.goalId,
-            goalText: goal?.text ?? "",
-            boardContext,
-          },
-          activeWorkflow.taskId,
-          wf,
-          text
-        );
+        let handled = false;
+        let response = "";
+
+        if (role === "recruiter") {
+          const result = await handleRecruiterApproval(
+            {
+              userId: user!.uid,
+              projectId: id,
+              goalId: activeWorkflow.goalId,
+              goalText: goal?.text ?? "",
+              boardContext,
+              projectDescription: project?.description ?? "",
+            },
+            activeWorkflow.taskId,
+            wf,
+            text
+          );
+          handled = result.handled;
+          response = result.response;
+        } else if (role === "sales") {
+          const result = await handleSalesApproval(
+            {
+              userId: user!.uid,
+              projectId: id,
+              goalId: activeWorkflow.goalId,
+              goalText: goal?.text ?? "",
+              boardContext,
+            },
+            activeWorkflow.taskId,
+            wf,
+            text
+          );
+          handled = result.handled;
+          response = result.response;
+        }
 
         if (handled) {
           addAgentChatMessage(user!.uid, id, role as EmployeeRole, {
@@ -134,6 +159,31 @@ You have full context of all board meetings and tasks. Be conversational, helpfu
         content: "Having trouble connecting. Try again in a moment.",
       });
     }
+    // After regular response, check if recruiter intent should auto-trigger workflow
+    if (role === "recruiter" && !activeWorkflow && detectRecruiterIntent(text)) {
+      // Check if there's no existing recruiter workflow running
+      const freshP = getProject(user!.uid, id);
+      const hasRecruiterWorkflow = freshP?.goals.some((g) =>
+        g.tasks.some((t) => t.assignedRole === "recruiter" && (t.status === "running" || t.status === "pending"))
+      );
+      if (!hasRecruiterWorkflow && freshP) {
+        // Auto-create a goal if none exists
+        let goalId = freshP.goals[0]?.id;
+        if (!goalId) {
+          const { createGoal } = await import("@/lib/store");
+          const newGoal = createGoal(user!.uid, id, `Recruiting: ${text.slice(0, 60)}`);
+          goalId = newGoal.id;
+        }
+        await triggerRecruiterWorkflow({
+          userId: user!.uid,
+          projectId: id,
+          goalId,
+          goalText: text,
+          boardContext: "",
+          projectDescription: freshP.description,
+        });
+      }
+    }
 
     refresh();
     setSending(false);
@@ -160,7 +210,7 @@ You have full context of all board meetings and tasks. Be conversational, helpfu
     growth: ["How do we get our first 100 users?", "What's the best acquisition channel?", "Write a launch strategy."],
     finance: ["What should we charge?", "When do we break even?", "Model our revenue for year one."],
     sales: ["Find leads for us.", "Write an outreach email.", "What's our sales strategy?"],
-    recruiter: ["Who should we hire first?", "Write a job description.", "How do we attract top talent?"],
+    recruiter: ["Scan my emails for candidates", "Screen applicants from my Gmail", "Who should we hire first?"],
   };
 
   return (
@@ -184,18 +234,30 @@ You have full context of all board meetings and tasks. Be conversational, helpfu
 
         {/* Workflow approval banner */}
         {activeWorkflow && (
-          <div className="px-5 py-3 bg-[#E94560]/10 border-b border-[#E94560]/20">
-            <p className="text-xs font-semibold text-[#E94560] mb-1">Sales workflow awaiting your approval</p>
-            <p className="text-xs text-slate-400 mb-2">Review the plan above and type your response, or use quick actions:</p>
-            <div className="flex gap-2">
+          <div className={`px-5 py-3 border-b ${role === 'recruiter' ? 'bg-[#1E90FF]/10 border-[#1E90FF]/20' : 'bg-[#E94560]/10 border-[#E94560]/20'}`}>
+            <p className={`text-xs font-semibold mb-1 ${role === 'recruiter' ? 'text-[#1E90FF]' : 'text-[#E94560]'}`}>
+              {role === 'recruiter' ? 'Candidate screening awaiting your review' : 'Sales workflow awaiting your approval'}
+            </p>
+            <p className="text-xs text-slate-400 mb-2">
+              {role === 'recruiter'
+                ? 'Review the candidates above. Use approve, reject, or details commands:'
+                : 'Review the plan above and type your response, or use quick actions:'}
+            </p>
+            <div className="flex gap-2 flex-wrap">
               <button onClick={quickApprove}
                 className="flex items-center gap-1.5 text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/20 px-3 py-1.5 rounded-lg hover:bg-green-500/25 transition-colors">
-                <CheckCircle2 className="size-3.5" /> Approve
+                <CheckCircle2 className="size-3.5" /> {role === 'recruiter' ? 'Approve #1' : 'Approve'}
               </button>
               <button onClick={quickReject}
                 className="flex items-center gap-1.5 text-xs font-medium bg-red-500/15 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/25 transition-colors">
                 <XCircle className="size-3.5" /> Reject with feedback
               </button>
+              {role === 'recruiter' && (
+                <button onClick={() => { setInput('details 1'); inputRef.current?.focus(); }}
+                  className="flex items-center gap-1.5 text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg hover:bg-blue-500/25 transition-colors">
+                  📝 Details #1
+                </button>
+              )}
             </div>
           </div>
         )}
