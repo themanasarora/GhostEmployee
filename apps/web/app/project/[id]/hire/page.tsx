@@ -20,6 +20,7 @@ export default function HireTeamPage() {
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [isFirstSetup, setIsFirstSetup] = useState(false);
+  const [projectPlan, setProjectPlan] = useState<"basic" | "advanced" | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -27,6 +28,7 @@ export default function HireTeamPage() {
     if (!project) { router.replace("/dashboard"); return; }
     setProjectName(project.name);
     setProjectDescription(project.description);
+    setProjectPlan(project.plan);
     // First setup = plan not set yet
     setIsFirstSetup(!project.plan);
     if (project.hiredRoles.length > 0) {

@@ -162,6 +162,12 @@ export function updateProject(
   }));
 }
 
+export function deleteProject(userId: string, projectId: string): void {
+  const projects = getProjects(userId);
+  const filtered = projects.filter((p) => p.id !== projectId);
+  saveProjects(userId, filtered);
+}
+
 // ─── Goal / Board Room CRUD ───────────────────────────────────────────────────
 
 export function createGoal(

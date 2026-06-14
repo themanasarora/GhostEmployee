@@ -6,5 +6,13 @@
     "notifyOn": "All events",
     "connectedAt": 1781379681817,
     "lastUsedAt": 1781421201201
+  },
+  "UAj7vdZUeYc0MzQ8reL2IqLTpIq1": {
+    "userId": "UAj7vdZUeYc0MzQ8reL2IqLTpIq1",
+    "webhookUrl": "https://hooks.slack.com/services/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",
+    "channel": "#general",
+    "notifyOn": "All events",
+    "connectedAt": 1781436578703,
+    "lastUsedAt": 1781436578703
   }
 }

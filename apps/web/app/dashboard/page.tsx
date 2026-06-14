@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { getProjects, createProject, Project } from "@/lib/store";
+import { getProjects, createProject, Project, updateProject } from "@/lib/store";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -17,6 +17,8 @@ export default function DashboardPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  const [step, setStep] = useState(1); // 1 = details, 2 = plan selection
+  const [selectedPlan, setSelectedPlan] = useState<"basic" | "advanced">("basic");
 
   useEffect(() => {
     if (user) setProjects(getProjects(user.uid));
@@ -25,13 +27,37 @@ export default function DashboardPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !name.trim() || !description.trim()) return;
+
+    if (step === 1) {
+      setStep(2);
+      return;
+    }
+
     setCreating(true);
     const project = createProject(user.uid, name.trim(), description.trim());
-    setCreating(false);
-    setShowModal(false);
-    setName(""); setDescription("");
-    // Always go to hire page first for Advanced plan
-    router.push(`/project/${project.id}/hire`);
+    if (selectedPlan === "basic") {
+      updateProject(user.uid, project.id, {
+        plan: "basic",
+        hiredRoles: ["ceo"],
+      });
+      setCreating(false);
+      setShowModal(false);
+      setName("");
+      setDescription("");
+      setStep(1);
+      router.push(`/project/${project.id}`);
+    } else {
+      updateProject(user.uid, project.id, {
+        plan: "advanced",
+        hiredRoles: ["ceo", "pm", "research", "growth"],
+      });
+      setCreating(false);
+      setShowModal(false);
+      setName("");
+      setDescription("");
+      setStep(1);
+      router.push(`/project/${project.id}/hire`);
+    }
   }
 
   if (loading) return (
@@ -99,7 +125,11 @@ export default function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium text-white truncate">{project.name}</span>
-                      {project.plan ? (
+                      {project.plan === "basic" ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-indigo-500/15 text-indigo-400">
+                          basic
+                        </span>
+                      ) : project.plan === "advanced" ? (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-[#E94560]/15 text-[#E94560]">
                           advanced
                         </span>
@@ -129,41 +159,114 @@ export default function DashboardPage() {
           <div className="relative z-10 w-full max-w-md bg-[#0F0F1A] border border-white/15 rounded-2xl p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <div>
-                <h2 className="text-base font-bold text-white">New project</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Your AI team will read this to understand the project.</p>
+                <h2 className="text-base font-bold text-white">
+                  {step === 1 ? "New project" : "Choose your plan"}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {step === 1 
+                    ? "Your AI team will read this to understand the project."
+                    : "Select a plan tailored for your project's scale."}
+                </p>
               </div>
               <button onClick={() => setShowModal(false)} className="text-slate-500 hover:text-white"><X className="size-4" /></button>
             </div>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <Input
-                label="Project name"
-                placeholder="e.g. AI Resume Optimizer"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                autoFocus
-              />
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-300">
-                  Description <span className="text-[#E94560]">*</span>
-                </label>
-                <textarea
-                  className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E94560] focus:border-transparent transition-colors resize-none"
-                  placeholder="What are you building? Who is it for? What problem does it solve? The more context, the better your team performs."
-                  rows={4}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+            {step === 1 ? (
+              <form onSubmit={handleCreate} className="space-y-4">
+                <Input
+                  label="Project name"
+                  placeholder="e.g. AI Resume Optimizer"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   required
+                  autoFocus
                 />
-                <p className="text-xs text-slate-500">Required — agents use this as their primary project context.</p>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-slate-300">
+                    Description <span className="text-[#E94560]">*</span>
+                  </label>
+                  <textarea
+                    className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E94560] focus:border-transparent transition-colors resize-none"
+                    placeholder="What are you building? Who is it for? What problem does it solve? The more context, the better your team performs."
+                    rows={4}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    required
+                  />
+                  <p className="text-xs text-slate-500">Required — agents use this as their primary project context.</p>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <Button variant="ghost" fullWidth type="button" onClick={() => setShowModal(false)}>Cancel</Button>
+                  <Button fullWidth type="submit" disabled={!name.trim() || !description.trim()}>
+                    Next: Choose plan →
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-4">
+                  {/* Basic Plan Card */}
+                  <div
+                    onClick={() => setSelectedPlan("basic")}
+                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                      selectedPlan === "basic"
+                        ? "border-indigo-500/60 bg-indigo-500/10 text-white"
+                        : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                        <Zap className="size-4 text-indigo-400" /> Basic Plan
+                      </span>
+                      {selectedPlan === "basic" && (
+                        <div className="size-4 rounded-full bg-indigo-500 flex items-center justify-center">
+                          <div className="size-2 rounded-full bg-white" />
+                        </div>
+                      )}
+                    </div>
+                    <ul className="text-xs space-y-1 text-slate-300">
+                      <li>• 1 Agent (CEO Ghost) only</li>
+                      <li>• 4 Core Integrations (Gmail, Slack, Calendar, ATS)</li>
+                      <li>• Single-agent dashboard and CEO Bulletin</li>
+                    </ul>
+                  </div>
+
+                  {/* Advanced Plan Card */}
+                  <div
+                    onClick={() => setSelectedPlan("advanced")}
+                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                      selectedPlan === "advanced"
+                        ? "border-[#E94560]/60 bg-[#E94560]/10 text-white"
+                        : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                        <Zap className="size-4 text-[#E94560]" /> Advanced Plan
+                      </span>
+                      {selectedPlan === "advanced" && (
+                        <div className="size-4 rounded-full bg-[#E94560] flex items-center justify-center">
+                          <div className="size-2 rounded-full bg-white" />
+                        </div>
+                      )}
+                    </div>
+                    <ul className="text-xs space-y-1 text-slate-300">
+                      <li>• Full AI Team (CTO, PM, Growth, Recruiter, etc.)</li>
+                      <li>• All integrations & tools (Research, Browser, etc.)</li>
+                      <li>• Multi-agent boardroom collaboration & meetings</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button variant="ghost" fullWidth onClick={() => setStep(1)}>
+                    Back
+                  </Button>
+                  <Button fullWidth onClick={handleCreate} loading={creating}>
+                    Confirm & Create
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-3 pt-1">
-                <Button variant="ghost" fullWidth type="button" onClick={() => setShowModal(false)}>Cancel</Button>
-                <Button fullWidth type="submit" loading={creating} disabled={!name.trim() || !description.trim()}>
-                  Create project →
-                </Button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
       )}

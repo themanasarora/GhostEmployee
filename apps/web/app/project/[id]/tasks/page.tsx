@@ -154,6 +154,12 @@ export default function TaskLogPage() {
   }, [user, id]);
 
   useEffect(() => {
+    if (project?.plan === "basic" && action === "research") {
+      setAction("email");
+    }
+  }, [project, action]);
+
+  useEffect(() => {
     if (!project) return;
     const pendingApprovalTask = getProjectTasks(project).find((task) => task.status === "waiting_approval");
     if (pendingApprovalTask) {
@@ -212,7 +218,7 @@ export default function TaskLogPage() {
       startedAt: undefined,
       completedAt: undefined,
       payload: action === "email" ? { emailDraft, emailDeliveryMode } : action === "calendar" ? { calendarAction, calendarEvent } : undefined,
-    });
+    } as any);
 
     if (needsApproval) {
       requestTaskApproval(
@@ -265,7 +271,7 @@ export default function TaskLogPage() {
         located.task.id,
         located.task.assignedRole,
         located.task.title,
-        located.task.action,
+        (located.task as any).action,
         located.task.description,
         refresh
       );
@@ -574,9 +580,9 @@ export default function TaskLogPage() {
       }
 
       const execution = buildExecutionNote(taskTitle, actionType, assigneeName, providerConnected);
-      const draftBlock = actionType === "email"
+      const draftBlock = (actionType as any) === "email"
         ? `\n\nDraft details:\nTo: ${emailDraft.to || "(recipient not set)"}\nSubject: ${emailDraft.subject || taskTitle}\nBody: ${emailDraft.body || taskDescription}`
-        : actionType === "calendar"
+        : (actionType as any) === "calendar"
         ? `\n\nCalendar Action details:\nAction: ${calendarAction}\nTitle: ${calendarEvent.summary || "(not set)"}\nStart: ${calendarEvent.start || "(not set)"}\nEnd: ${calendarEvent.end || "(not set)"}`
         : "";
       appendTaskLog(userId, projectId, goalId, taskId, {
@@ -801,17 +807,35 @@ export default function TaskLogPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-slate-300">Action</label>
                 <select value={action} onChange={(e) => setAction(e.target.value as TaskAction)} className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E94560]">
-                  {ACTIONS.map((item) => {
-                    const isAdvanced = ["ats", "browser", "calendar"].includes(item.value);
-                    const disabled = project.plan === "basic" && isAdvanced;
+                  {ACTIONS.filter((item) => {
+                    if (project?.plan === "basic") {
+                      return ["email", "slack", "calendar", "ats"].includes(item.value);
+                    }
+                    return true;
+                  }).map((item) => {
                     return (
-                      <option key={item.value} value={item.value} disabled={disabled} className="bg-[#0F0F1A]">
-                        {item.label} {disabled ? "(Advanced plan only)" : ""}
+                      <option key={item.value} value={item.value} className="bg-[#0F0F1A]">
+                        {item.label}
                       </option>
                     );
                   })}
                 </select>
-                <p className="text-[11px] text-slate-500">{actionConfig?.detail}</p>
+                {(() => {
+                  const provId = mapActionToProvider(action);
+                  const conn = provId ? providerConnections[provId] : null;
+                  if (provId && (!conn || !conn.connected)) {
+                    const label = provId === "gmail" ? "Gmail"
+                      : provId === "googleCalendar" ? "Google Calendar"
+                      : provId === "slack" ? "Slack"
+                      : provId === "ats" ? "ATS" : provId;
+                    return (
+                      <span className="text-[11px] text-yellow-500/90 font-medium mt-1">
+                        ⚠️ Warning: {label} is not connected. This task will run as a placeholder until connected.
+                      </span>
+                    );
+                  }
+                  return <p className="text-[11px] text-slate-500">{actionConfig?.detail}</p>;
+                })()}
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-slate-300">Source</label>
