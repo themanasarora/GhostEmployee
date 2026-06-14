@@ -1,0 +1,18 @@
+{
+  "KdviJgvhNOeUU1UM9DpWfsSu71j2": {
+    "userId": "KdviJgvhNOeUU1UM9DpWfsSu71j2",
+    "webhookUrl": "SLACK_WEBHOOK_URL",
+    "channel": "#all-rishi",
+    "notifyOn": "All events",
+    "connectedAt": 1781379681817,
+    "lastUsedAt": 1781421201201
+  },
+  "UAj7vdZUeYc0MzQ8reL2IqLTpIq1": {
+    "userId": "UAj7vdZUeYc0MzQ8reL2IqLTpIq1",
+    "webhookUrl": "https://hooks.slack.com/services/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",
+    "channel": "#general",
+    "notifyOn": "All events",
+    "connectedAt": 1781436578703,
+    "lastUsedAt": 1781436578703
+  }
+}
