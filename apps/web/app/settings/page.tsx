@@ -19,6 +19,13 @@ export default function SettingsPage() {
     ats: null,
     browser: null,
   });
+  
+  // Slack connection modal state
+  const [showSlackModal, setShowSlackModal] = useState(false);
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState("");
+  const [slackChannel, setSlackChannel] = useState("#general");
+  const [slackConnecting, setSlackConnecting] = useState(false);
+  const [slackError, setSlackError] = useState<string | null>(null);
 
   useEffect(() => {
     if (authUser?.uid) setConnections(getProviderConnections(authUser.uid));
@@ -66,6 +73,25 @@ export default function SettingsPage() {
         console.error("Failed to sync Google Calendar status", e);
       }
 
+      try {
+        const response = await fetch(`/api/slack/status?userId=${encodeURIComponent(authUser.uid)}`);
+        const data = await response.json();
+        if (data.connected) {
+          const provider = PROVIDERS.find((item) => item.id === "slack");
+          setProviderConnection(authUser.uid, {
+            providerId: "slack",
+            connected: true,
+            connectedAt: data.connectedAt ?? Date.now(),
+            label: data.label ?? "Slack Workspace",
+            accountHint: data.accountHint ?? undefined,
+            scopes: data.scopes ?? provider?.scopes,
+            lastUsedAt: data.lastUsedAt ?? data.connectedAt ?? Date.now(),
+          });
+        }
+      } catch (e) {
+        console.error("Failed to sync Slack status", e);
+      }
+
       setConnections(getProviderConnections(authUser.uid));
     }
 
@@ -89,6 +115,13 @@ export default function SettingsPage() {
       window.location.href = `/api/calendar/connect/start?userId=${encodeURIComponent(authUser.uid)}&returnTo=${encodeURIComponent("/settings")}`;
       return;
     }
+    if (providerId === "slack") {
+      setSlackWebhookUrl("");
+      setSlackChannel("#general");
+      setSlackError(null);
+      setShowSlackModal(true);
+      return;
+    }
     const provider = PROVIDERS.find((item) => item.id === providerId);
     setProviderConnection(authUser.uid, {
       providerId,
@@ -102,6 +135,56 @@ export default function SettingsPage() {
     refreshConnections();
   }
 
+  async function handleSlackConnect() {
+    if (!authUser?.uid || !slackWebhookUrl.trim()) {
+      setSlackError("Webhook URL is required.");
+      return;
+    }
+
+    setSlackConnecting(true);
+    setSlackError(null);
+
+    try {
+      const response = await fetch("/api/slack/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: authUser.uid,
+          webhookUrl: slackWebhookUrl.trim(),
+          channel: slackChannel.trim() || "#general",
+          notifyOn: "All events",
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        setSlackError(data.error || "Failed to connect Slack.");
+        setSlackConnecting(false);
+        return;
+      }
+
+      const provider = PROVIDERS.find((item) => item.id === "slack");
+      setProviderConnection(authUser.uid, {
+        providerId: "slack",
+        connected: true,
+        connectedAt: Date.now(),
+        label: "Slack Workspace",
+        accountHint: slackChannel.trim() || "#general",
+        scopes: provider?.scopes,
+        lastUsedAt: Date.now(),
+      });
+
+      setShowSlackModal(false);
+      setSlackWebhookUrl("");
+      setSlackChannel("#general");
+      refreshConnections();
+    } catch (error) {
+      setSlackError(error instanceof Error ? error.message : "Failed to connect Slack.");
+    } finally {
+      setSlackConnecting(false);
+    }
+  }
+
   function disconnectProvider(providerId: ProviderId) {
     if (!authUser?.uid) return;
     if (providerId === "gmail") {
@@ -109,6 +192,9 @@ export default function SettingsPage() {
     }
     if (providerId === "googleCalendar") {
       void fetch(`/api/calendar/disconnect?userId=${encodeURIComponent(authUser.uid)}`, { method: "POST" });
+    }
+    if (providerId === "slack") {
+      void fetch(`/api/slack/disconnect?userId=${encodeURIComponent(authUser.uid)}`, { method: "POST" });
     }
     clearProviderConnection(authUser.uid, providerId);
     refreshConnections();
@@ -233,6 +319,74 @@ export default function SettingsPage() {
             <span>{connectedCount} provider{connectedCount === 1 ? " is" : "s are"} connected right now.</span>
           </div>
         </div>
+
+        {/* Slack Connection Modal */}
+        {showSlackModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-[#0A0A14] border border-white/10 rounded-2xl p-8 max-w-md w-full mx-4">
+              <h2 className="text-lg font-bold text-white mb-2">Connect Slack Workspace</h2>
+              <p className="text-sm text-slate-400 mb-6">
+                Paste your Slack Incoming Webhook URL to allow agents to post updates to your workspace.
+              </p>
+
+              {slackError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                  <p className="text-sm text-red-400">{slackError}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-2">Webhook URL</label>
+                  <input
+                    type="password"
+                    placeholder="https://hooks.slack.com/services/..."
+                    value={slackWebhookUrl}
+                    onChange={(e) => setSlackWebhookUrl(e.target.value)}
+                    disabled={slackConnecting}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#E94560] transition-colors disabled:opacity-50"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Get this from Slack's Incoming Webhooks app settings
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-2">Channel</label>
+                  <input
+                    type="text"
+                    placeholder="#general"
+                    value={slackChannel}
+                    onChange={(e) => setSlackChannel(e.target.value)}
+                    disabled={slackConnecting}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#E94560] transition-colors disabled:opacity-50"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-4">
+                  <Button
+                    variant="ghost"
+                    fullWidth
+                    onClick={() => {
+                      setShowSlackModal(false);
+                      setSlackError(null);
+                    }}
+                    disabled={slackConnecting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    fullWidth
+                    onClick={handleSlackConnect}
+                    disabled={slackConnecting || !slackWebhookUrl.trim()}
+                  >
+                    {slackConnecting ? "Connecting..." : "Connect"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
