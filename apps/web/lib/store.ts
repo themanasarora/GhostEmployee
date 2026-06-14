@@ -1,89 +1,76 @@
+/**
+ * GhostEmployee — localStorage store
+ * Single source of truth for all client-side state.
+ * Phase 2: replace with Postgres via API routes.
+ *
+ * Context model:
+ *   Project
+ *     └── Goals[]            (each goal = a board room)
+ *           └── BoardMessages[]  (the persistent board conversation)
+ *           └── Tasks[]          (agent tasks inside this goal)
+ *     └── AgentChats{}       (one chat thread per employee role)
+ *           └── ChatMessages[]
+ */
+
 import { EMPLOYEES } from "@/lib/plans";
 
 export type EmployeeRole =
   | "ceo" | "cto" | "pm" | "research"
   | "growth" | "sales" | "finance" | "recruiter";
 
+// ─── Message types ────────────────────────────────────────────────────────────
+
 export type MessageSender = "user" | EmployeeRole | "system";
-
-export type TaskSource = "user" | "agent";
-
-export type TaskAction =
-  | "email"
-  | "slack"
-  | "research"
-  | "ats"
-  | "browser"
-  | "calendar"
-  | "approval"
-  | "report";
-
-export type TaskStatus = "pending" | "running" | "waiting_approval" | "complete" | "failed";
-
-export type TaskApprovalState = "not_needed" | "needed" | "requested" | "approved" | "rejected";
-
-export type TaskLogLevel = "info" | "approval" | "success" | "warning" | "error";
 
 export interface Message {
   id: string;
-  sender: MessageSender;
+  sender: MessageSender;       // "user" | role | "system"
   senderName: string;
   senderIcon: string;
   content: string;
   timestamp: number;
   isMock?: boolean;
-  mentions?: EmployeeRole[];
-  isUserInput?: boolean;
-  kind?: "text" | "artifact" | "approval";
-  taskId?: string;
-  artifactTitle?: string;
+  mentions?: EmployeeRole[];   // @-tagged agents in board room
+  isUserInput?: boolean;       // true when user typed in board room
 }
+
+// ─── Task types ───────────────────────────────────────────────────────────────
+
+export type TaskStatus = "pending" | "running" | "complete" | "failed" | "waiting_approval";
 
 export interface Task {
   id: string;
   goalId: string;
-  source: TaskSource;
-  action: TaskAction;
-  deliveryMode?: "draft" | "send";
   assignedRole: EmployeeRole;
   title: string;
   description: string;
   status: TaskStatus;
-  approvalState: TaskApprovalState;
-  approvalReason?: string;
   output?: string;
   createdAt: number;
-  startedAt?: number;
   completedAt?: number;
-  logs: TaskLogEntry[];
-  payload?: any;
 }
 
-export interface TaskLogEntry {
-  id: string;
-  taskId: string;
-  title: string;
-  detail: string;
-  level: TaskLogLevel;
-  createdAt: number;
-  role?: EmployeeRole;
-}
+// ─── Goal / Board Room ────────────────────────────────────────────────────────
 
 export interface Goal {
   id: string;
   projectId: string;
   text: string;
-  boardMessages: Message[];
+  boardMessages: Message[];   // the persistent board room conversation
   tasks: Task[];
   createdAt: number;
   lastActiveAt: number;
 }
+
+// ─── Agent chat thread ────────────────────────────────────────────────────────
 
 export interface AgentChat {
   role: EmployeeRole;
   messages: Message[];
   lastActiveAt: number;
 }
+
+// ─── Project ──────────────────────────────────────────────────────────────────
 
 export interface Project {
   id: string;
@@ -92,49 +79,27 @@ export interface Project {
   plan: "basic" | "advanced" | null;
   hiredRoles: EmployeeRole[];
   goals: Goal[];
-  taskEvents: TaskLogEntry[];
   agentChats: Partial<Record<EmployeeRole, AgentChat>>;
+  taskEvents: any[];
   createdAt: number;
   updatedAt: number;
 }
 
+// ─── Default roles for Basic plan ────────────────────────────────────────────
+
 export const DEFAULT_ROLES: EmployeeRole[] = ["ceo", "pm", "research", "growth"];
+
+// ─── Storage helpers ──────────────────────────────────────────────────────────
 
 function key(userId: string) {
   return `ghost_v2_${userId}`;
-}
-
-function normalizeTask(task: any): Task {
-  return {
-    ...task,
-    source: task.source ?? "user",
-    action: task.action ?? "report",
-    deliveryMode: task.deliveryMode ?? "send",
-    approvalState: task.approvalState ?? "not_needed",
-    logs: Array.isArray(task.logs) ? task.logs : [],
-  };
-}
-
-function normalizeProject(project: any): Project {
-  return {
-    ...project,
-    goals: Array.isArray(project.goals)
-      ? project.goals.map((goal: any) => ({
-          ...goal,
-          boardMessages: Array.isArray(goal.boardMessages) ? goal.boardMessages : [],
-          tasks: Array.isArray(goal.tasks) ? goal.tasks.map(normalizeTask) : [],
-        }))
-      : [],
-    taskEvents: Array.isArray(project.taskEvents) ? project.taskEvents : [],
-    agentChats: project.agentChats ?? {},
-  };
 }
 
 export function getProjects(userId: string): Project[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(key(userId));
-    return raw ? (JSON.parse(raw) as Project[]).map(normalizeProject) : [];
+    return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
 
@@ -156,7 +121,13 @@ function mutateProject(
   return projects[idx];
 }
 
-export function createProject(userId: string, name: string, description: string): Project {
+// ─── Project CRUD ─────────────────────────────────────────────────────────────
+
+export function createProject(
+  userId: string,
+  name: string,
+  description: string
+): Project {
   const project: Project = {
     id: crypto.randomUUID(),
     name,
@@ -164,8 +135,8 @@ export function createProject(userId: string, name: string, description: string)
     plan: null,
     hiredRoles: DEFAULT_ROLES,
     goals: [],
-    taskEvents: [],
     agentChats: {},
+    taskEvents: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -191,7 +162,13 @@ export function updateProject(
   }));
 }
 
-export function createGoal(userId: string, projectId: string, text: string): Goal {
+// ─── Goal / Board Room CRUD ───────────────────────────────────────────────────
+
+export function createGoal(
+  userId: string,
+  projectId: string,
+  text: string
+): Goal {
   const goal: Goal = {
     id: crypto.randomUUID(),
     projectId,
@@ -208,32 +185,11 @@ export function createGoal(userId: string, projectId: string, text: string): Goa
   return goal;
 }
 
-export function deriveTaskAssignee(action: TaskAction): EmployeeRole {
-  if (action === "email" || action === "slack") return "sales";
-  if (action === "research" || action === "browser") return "research";
-  if (action === "ats") return "recruiter";
-  if (action === "calendar") return "pm";
-  if (action === "approval") return "ceo";
-  return "pm";
-}
-
-export function getProjectTasks(project: Project) {
-  return project.goals
-    .flatMap((g) => g.tasks.map((t) => ({ ...t, goalText: g.text, goalId: g.id })))
-    .sort((a, b) => b.createdAt - a.createdAt);
-}
-
-export function getTaskById(userId: string, projectId: string, taskId: string) {
-  const project = getProject(userId, projectId);
-  if (!project) return null;
-  for (const goal of project.goals) {
-    const task = goal.tasks.find((t) => t.id === taskId);
-    if (task) return { task, goal };
-  }
-  return null;
-}
-
-export function getGoal(userId: string, projectId: string, goalId: string): Goal | null {
+export function getGoal(
+  userId: string,
+  projectId: string,
+  goalId: string
+): Goal | null {
   const project = getProject(userId, projectId);
   return project?.goals.find((g) => g.id === goalId) ?? null;
 }
@@ -264,32 +220,14 @@ export function addTask(
   userId: string,
   projectId: string,
   goalId: string,
-  task: Omit<Task, "id" | "createdAt" | "logs">
+  task: Omit<Task, "id" | "createdAt">
 ): Task {
-  const now = Date.now();
-  const t: Task = {
-    ...task,
-    id: crypto.randomUUID(),
-    createdAt: now,
-    logs: [],
-  };
-  const createdLog: TaskLogEntry = {
-    id: crypto.randomUUID(),
-    taskId: t.id,
-    title: "Task created",
-    detail: `${task.source === "agent" ? "Agent" : "User"} task assigned to ${task.assignedRole}.`,
-    level: "info",
-    createdAt: now,
-    role: task.assignedRole,
-  };
-  t.logs = [createdLog];
+  const t: Task = { ...task, id: crypto.randomUUID(), createdAt: Date.now() };
   mutateProject(userId, projectId, (p) => ({
     ...p,
-    taskEvents: [createdLog, ...p.taskEvents],
     goals: p.goals.map((g) =>
-      g.id === goalId ? { ...g, tasks: [...g.tasks, t], lastActiveAt: Date.now() } : g
+      g.id === goalId ? { ...g, tasks: [...g.tasks, t] } : g
     ),
-    updatedAt: Date.now(),
   }));
   return t;
 }
@@ -299,19 +237,30 @@ export function updateTask(
   projectId: string,
   goalId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "status" | "output" | "completedAt" | "approvalState" | "approvalReason" | "startedAt">>
+  updates: Partial<Pick<Task, "status" | "output" | "completedAt">>
 ) {
   mutateProject(userId, projectId, (p) => ({
     ...p,
     goals: p.goals.map((g) =>
       g.id === goalId
-        ? { ...g, tasks: g.tasks.map((t) => t.id === taskId ? { ...t, ...updates } : t) }
+        ? {
+            ...g,
+            tasks: g.tasks.map((t) =>
+              t.id === taskId ? { ...t, ...updates } : t
+            ),
+          }
         : g
     ),
   }));
 }
 
-export function getAgentChat(userId: string, projectId: string, role: EmployeeRole): AgentChat | null {
+// ─── Agent chat CRUD ──────────────────────────────────────────────────────────
+
+export function getAgentChat(
+  userId: string,
+  projectId: string,
+  role: EmployeeRole
+): AgentChat | null {
   const project = getProject(userId, projectId);
   return project?.agentChats[role] ?? null;
 }
@@ -322,7 +271,11 @@ export function addAgentChatMessage(
   role: EmployeeRole,
   message: Omit<Message, "id" | "timestamp">
 ): Message {
-  const msg: Message = { ...message, id: crypto.randomUUID(), timestamp: Date.now() };
+  const msg: Message = {
+    ...message,
+    id: crypto.randomUUID(),
+    timestamp: Date.now(),
+  };
   mutateProject(userId, projectId, (p) => {
     const existing = p.agentChats[role];
     return {
@@ -340,167 +293,16 @@ export function addAgentChatMessage(
   return msg;
 }
 
-export function addTaskEvent(
-  userId: string,
-  projectId: string,
-  event: Omit<TaskLogEntry, "id" | "createdAt">
-): TaskLogEntry {
-  const entry: TaskLogEntry = {
-    ...event,
-    id: crypto.randomUUID(),
-    createdAt: Date.now(),
-  };
-  mutateProject(userId, projectId, (p) => ({
-    ...p,
-    taskEvents: [entry, ...p.taskEvents],
-    updatedAt: Date.now(),
-  }));
-  return entry;
-}
-
-export function appendTaskLog(
-  userId: string,
-  projectId: string,
-  goalId: string,
-  taskId: string,
-  log: Omit<TaskLogEntry, "id" | "createdAt" | "taskId">
-) {
-  const entry: TaskLogEntry = {
-    ...log,
-    id: crypto.randomUUID(),
-    taskId,
-    createdAt: Date.now(),
-  };
-  mutateProject(userId, projectId, (p) => ({
-    ...p,
-    taskEvents: [entry, ...p.taskEvents],
-    goals: p.goals.map((g) =>
-      g.id === goalId
-        ? {
-            ...g,
-            tasks: g.tasks.map((task) =>
-              task.id === taskId
-                ? { ...task, logs: [...task.logs, entry] }
-                : task
-            ),
-            lastActiveAt: Date.now(),
-          }
-        : g
-    ),
-    updatedAt: Date.now(),
-  }));
-  return entry;
-}
-
-export function requestTaskApproval(
-  userId: string,
-  projectId: string,
-  goalId: string,
-  taskId: string,
-  reason: string
-) {
-  updateTask(userId, projectId, goalId, taskId, {
-    status: "waiting_approval",
-    approvalState: "requested",
-    approvalReason: reason,
-  });
-  appendTaskLog(userId, projectId, goalId, taskId, {
-    title: "Approval needed",
-    detail: reason,
-    level: "approval",
-  });
-}
-
-export function resolveTaskApproval(
-  userId: string,
-  projectId: string,
-  goalId: string,
-  taskId: string,
-  approved: boolean,
-  reason: string
-) {
-  updateTask(userId, projectId, goalId, taskId, {
-    approvalState: approved ? "approved" : "rejected",
-    status: approved ? "running" : "failed",
-  });
-  appendTaskLog(userId, projectId, goalId, taskId, {
-    title: approved ? "Approval granted" : "Approval rejected",
-    detail: reason,
-    level: approved ? "success" : "warning",
-  });
-}
-
-export function markTaskRunning(
-  userId: string,
-  projectId: string,
-  goalId: string,
-  taskId: string,
-  detail: string
-) {
-  updateTask(userId, projectId, goalId, taskId, {
-    status: "running",
-    startedAt: Date.now(),
-  });
-  appendTaskLog(userId, projectId, goalId, taskId, {
-    title: "Task started",
-    detail,
-    level: "info",
-  });
-}
-
-export function completeTask(
-  userId: string,
-  projectId: string,
-  goalId: string,
-  taskId: string,
-  output: string
-) {
-  updateTask(userId, projectId, goalId, taskId, {
-    status: "complete",
-    output,
-    completedAt: Date.now(),
-  });
-  appendTaskLog(userId, projectId, goalId, taskId, {
-    title: "Task complete",
-    detail: output,
-    level: "success",
-  });
-}
-
-export function deliverTaskArtifact(
-  userId: string,
-  projectId: string,
-  goalId: string,
-  taskId: string,
-  role: EmployeeRole,
-  payload: { title: string; content: string }
-) {
-  const emp = getEmployeeDetails(role);
-  addAgentChatMessage(userId, projectId, role, {
-    sender: role,
-    senderName: emp.name,
-    senderIcon: emp.icon,
-    content: payload.content,
-    kind: "artifact",
-    taskId,
-    artifactTitle: payload.title,
-  });
-  appendTaskLog(userId, projectId, goalId, taskId, {
-    title: `Artifact delivered to ${emp.name}`,
-    detail: payload.title,
-    level: "success",
-    role,
-  });
-}
+// ─── Context window builder ───────────────────────────────────────────────────
+// Builds the full context for an AI call: project info + relevant history
 
 export interface ContextWindow {
   projectName: string;
   projectDescription: string;
   hiredTeam: string;
-  recentBoardRooms: string;
-  agentChatHistory: string;
-  tasks: string;
-  taskEvents: string;
+  recentBoardRooms: string;   // summaries of all goal board rooms
+  agentChatHistory: string;   // this agent's chat history
+  tasks: string;              // all tasks across all goals
 }
 
 export function buildContextWindow(
@@ -515,15 +317,22 @@ export function buildContextWindow(
     })
     .join(", ");
 
+  // Board rooms: last 20 messages per goal, newest goals first
   const boardRooms = project.goals
-    .slice(0, 5)
+    .slice(0, 5) // last 5 goals for context
     .map((g) => {
-      const msgs = g.id === currentGoalId ? g.boardMessages.slice(-30) : g.boardMessages.slice(-10);
-      const transcript = msgs.map((m) => `[${m.senderName}]: ${m.content}`).join("\n");
+      const isCurrentGoal = g.id === currentGoalId;
+      const msgs = isCurrentGoal
+        ? g.boardMessages.slice(-30) // more context for current goal
+        : g.boardMessages.slice(-10);
+      const transcript = msgs
+        .map((m) => `[${m.senderName}]: ${m.content}`)
+        .join("\n");
       return `Goal: "${g.text}"\n${transcript || "(no messages yet)"}`;
     })
     .join("\n\n---\n\n");
 
+  // Agent's own chat history
   const agentHistory = targetRole
     ? (project.agentChats[targetRole]?.messages ?? [])
         .slice(-20)
@@ -531,12 +340,12 @@ export function buildContextWindow(
         .join("\n")
     : "";
 
+  // Tasks
   const allTasks = project.goals.flatMap((g) =>
-    g.tasks.map((t) => `[${t.assignedRole}] ${t.title}: ${t.status} (${t.action}${t.approvalState !== "not_needed" ? `, approval:${t.approvalState}` : ""})${t.output ? ` — ${t.output.slice(0, 100)}` : ""}`)
+    g.tasks.map(
+      (t) => `[${t.assignedRole}] ${t.title}: ${t.status}${t.output ? ` — ${t.output.slice(0, 100)}` : ""}`
+    )
   );
-  const taskEvents = project.taskEvents
-    .slice(0, 25)
-    .map((event) => `${new Date(event.createdAt).toLocaleString()} [${event.role ?? "system"}] ${event.title}: ${event.detail}`);
 
   return {
     projectName: project.name,
@@ -545,20 +354,405 @@ export function buildContextWindow(
     recentBoardRooms: boardRooms,
     agentChatHistory: agentHistory,
     tasks: allTasks.join("\n") || "No tasks yet.",
-    taskEvents: taskEvents.join("\n") || "No task events yet.",
   };
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function getEmployeeDetails(role: EmployeeRole) {
   return EMPLOYEES.find((e) => e.role === role)!;
 }
 
 export function parseMentions(text: string): EmployeeRole[] {
-  const allRoles: EmployeeRole[] = ["ceo", "cto", "pm", "research", "growth", "sales", "finance", "recruiter"];
+  const allRoles: EmployeeRole[] = [
+    "ceo", "cto", "pm", "research", "growth", "sales", "finance", "recruiter",
+  ];
   const mentioned: EmployeeRole[] = [];
   const lower = text.toLowerCase();
   for (const role of allRoles) {
-    if (lower.includes(`@${role}`)) mentioned.push(role);
+    if (lower.includes(`@${role}`) || lower.includes(`@${role} `)) {
+      mentioned.push(role);
+    }
   }
   return mentioned;
+}
+
+// ─── Workflow types ───────────────────────────────────────────────────────────
+
+export type WorkflowStatus =
+  | "idle"
+  | "researching"
+  | "generating"
+  | "awaiting_approval"
+  | "approved"
+  | "rejected"
+  | "complete";
+
+export interface WorkflowState {
+  taskId: string;
+  goalId: string;
+  projectId: string;
+  assignedRole: EmployeeRole;
+  status: WorkflowStatus;
+  steps: WorkflowStep[];
+  finalOutput?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WorkflowStep {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "complete" | "failed";
+  output?: string;
+  createdAt: number;
+}
+
+// ─── Workflow CRUD ────────────────────────────────────────────────────────────
+
+export function createWorkflow(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  role: EmployeeRole
+): WorkflowState {
+  const workflow: WorkflowState = {
+    taskId,
+    goalId,
+    projectId,
+    assignedRole: role,
+    status: "idle",
+    steps: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  // Store workflow in task output field as JSON
+  updateTask(userId, projectId, goalId, taskId, {
+    status: "running",
+    output: JSON.stringify({ workflow }),
+  });
+  return workflow;
+}
+
+export function getWorkflowFromTask(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string
+): WorkflowState | null {
+  const goal = getGoal(userId, projectId, goalId);
+  const task = goal?.tasks.find((t) => t.id === taskId);
+  if (!task?.output) return null;
+  try {
+    const parsed = JSON.parse(task.output);
+    return parsed.workflow ?? null;
+  } catch { return null; }
+}
+
+export function saveWorkflow(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  workflow: WorkflowState
+) {
+  updateTask(userId, projectId, goalId, taskId, {
+    output: JSON.stringify({ workflow }),
+    status: workflow.status === "complete" ? "complete"
+      : workflow.status === "approved" ? "complete"
+      : "running",
+  });
+}
+
+// ─── CEO task extraction ──────────────────────────────────────────────────────
+
+export function detectSalesIntent(text: string): boolean {
+  const salesKeywords = [
+    "lead", "leads", "outreach", "prospect", "sales", "customer",
+    "acquisition", "pipeline", "email campaign", "cold email",
+    "find customers", "get customers", "sell", "revenue", "convert",
+  ];
+  const lower = text.toLowerCase();
+  return salesKeywords.some((kw) => lower.includes(kw));
+}
+
+export function detectWorkflowTrigger(messages: Message[]): {
+  shouldTrigger: boolean;
+  role: EmployeeRole | null;
+  reason: string;
+} {
+  const lastFew = messages.slice(-5);
+  const combined = lastFew.map((m) => m.content).join(" ").toLowerCase();
+
+  if (detectSalesIntent(combined)) {
+    return { shouldTrigger: true, role: "sales", reason: "Sales/outreach activity detected in board discussion" };
+  }
+  return { shouldTrigger: false, role: null, reason: "" };
+}
+
+// ─── Extended Task types (for PR's task execution engine) ─────────────────────
+
+export type TaskAction = "email" | "slack" | "research" | "ats" | "browser" | "calendar" | "approval" | "report";
+export type TaskSource = "user" | "agent";
+export type ApprovalState = "not_needed" | "needed" | "approved" | "rejected";
+
+export interface TaskLog {
+  id: string;
+  title: string;
+  detail: string;
+  level: "info" | "success" | "warning" | "error" | "approval";
+  role?: EmployeeRole;
+  createdAt: number;
+}
+
+export interface TaskArtifact {
+  title: string;
+  content: string;
+}
+
+export interface TaskEvent {
+  id: string;
+  title: string;
+  detail: string;
+  role?: EmployeeRole;
+  createdAt: number;
+}
+
+// Extended Task — superset of base Task
+export interface ExtendedTask extends Task {
+  source: TaskSource;
+  action: TaskAction;
+  logs: TaskLog[];
+  approvalState: ApprovalState;
+  approvalReason?: string;
+  deliveryMode?: "draft" | "send";
+  payload?: Record<string, any>;
+  goalText?: string;
+  startedAt?: number;
+  artifact?: TaskArtifact;
+}
+
+// ─── Upgrade existing store to support extended tasks + taskEvents ────────────
+
+export function getProjectTasks(project: Project): ExtendedTask[] {
+  return project.goals.flatMap((g) =>
+    g.tasks.map((t: any) => ({
+      source: "user" as TaskSource,
+      action: "research" as TaskAction,
+      logs: [],
+      approvalState: "not_needed" as ApprovalState,
+      ...t,
+      goalText: g.text,
+    })) as ExtendedTask[]
+  ).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getTaskById(
+  userId: string,
+  projectId: string,
+  taskId: string
+): { task: ExtendedTask; goalId: string } | null {
+  const project = getProject(userId, projectId);
+  if (!project) return null;
+  for (const goal of project.goals) {
+    const task = goal.tasks.find((t) => t.id === taskId);
+    if (task) {
+      return {
+        task: { source: "user", action: "research", logs: [], approvalState: "not_needed", ...task, goalText: goal.text } as ExtendedTask,
+        goalId: goal.id,
+      };
+    }
+  }
+  return null;
+}
+
+export function deriveTaskAssignee(action: TaskAction): EmployeeRole {
+  const map: Record<TaskAction, EmployeeRole> = {
+    email: "sales",
+    slack: "growth",
+    research: "research",
+    ats: "recruiter",
+    browser: "cto",
+    calendar: "pm",
+    approval: "ceo",
+    report: "pm",
+  };
+  return map[action] ?? "ceo";
+}
+
+export function markTaskRunning(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  detail: string
+) {
+  mutateProjectInternal(userId, projectId, (p) => ({
+    ...p,
+    goals: p.goals.map((g: any) =>
+      g.id !== goalId ? g : {
+        ...g,
+        tasks: g.tasks.map((t: any) =>
+          t.id !== taskId ? t : {
+            ...t,
+            status: "running" as TaskStatus,
+            startedAt: Date.now(),
+          }
+        ),
+      }
+    ),
+    taskEvents: [
+      ...(p.taskEvents ?? []),
+      { id: crypto.randomUUID(), title: "Task started", detail, createdAt: Date.now() },
+    ],
+  }));
+}
+
+export function completeTask(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  output: string
+) {
+  mutateProjectInternal(userId, projectId, (p) => ({
+    ...p,
+    goals: p.goals.map((g: any) =>
+      g.id !== goalId ? g : {
+        ...g,
+        tasks: g.tasks.map((t: any) =>
+          t.id !== taskId ? t : {
+            ...t,
+            status: "complete" as TaskStatus,
+            output,
+            completedAt: Date.now(),
+          }
+        ),
+      }
+    ),
+    taskEvents: [
+      ...(p.taskEvents ?? []),
+      { id: crypto.randomUUID(), title: "Task completed", detail: output.slice(0, 120), createdAt: Date.now() },
+    ],
+  }));
+}
+
+export function requestTaskApproval(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  reason: string
+) {
+  mutateProjectInternal(userId, projectId, (p) => ({
+    ...p,
+    goals: p.goals.map((g: any) =>
+      g.id !== goalId ? g : {
+        ...g,
+        tasks: g.tasks.map((t: any) =>
+          t.id !== taskId ? t : {
+            ...t,
+            status: "pending" as TaskStatus,
+            approvalState: "needed",
+            approvalReason: reason,
+          }
+        ),
+      }
+    ),
+  }));
+}
+
+export function resolveTaskApproval(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  approved: boolean,
+  note: string
+) {
+  mutateProjectInternal(userId, projectId, (p) => ({
+    ...p,
+    goals: p.goals.map((g: any) =>
+      g.id !== goalId ? g : {
+        ...g,
+        tasks: g.tasks.map((t: any) =>
+          t.id !== taskId ? t : {
+            ...t,
+            status: approved ? "pending" : "failed" as TaskStatus,
+            approvalState: approved ? "approved" : "rejected",
+          }
+        ),
+      }
+    ),
+    taskEvents: [
+      ...(p.taskEvents ?? []),
+      { id: crypto.randomUUID(), title: approved ? "Task approved" : "Task rejected", detail: note, createdAt: Date.now() },
+    ],
+  }));
+}
+
+export function deliverTaskArtifact(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  _role: EmployeeRole,
+  artifact: TaskArtifact
+) {
+  mutateProjectInternal(userId, projectId, (p) => ({
+    ...p,
+    goals: p.goals.map((g: any) =>
+      g.id !== goalId ? g : {
+        ...g,
+        tasks: g.tasks.map((t: any) =>
+          t.id !== taskId ? t : { ...t, artifact }
+        ),
+      }
+    ),
+  }));
+}
+
+export function appendTaskLog(
+  userId: string,
+  projectId: string,
+  goalId: string,
+  taskId: string,
+  log: Omit<TaskLog, "id" | "createdAt">
+) {
+  const entry: TaskLog = { ...log, id: crypto.randomUUID(), createdAt: Date.now() };
+  mutateProjectInternal(userId, projectId, (p) => ({
+    ...p,
+    goals: p.goals.map((g: any) =>
+      g.id !== goalId ? g : {
+        ...g,
+        tasks: g.tasks.map((t: any) =>
+          t.id !== taskId ? t : {
+            ...t,
+            logs: [...((t as any).logs ?? []), entry],
+          }
+        ),
+      }
+    ),
+    taskEvents: [
+      ...(p.taskEvents ?? []),
+      { id: crypto.randomUUID(), title: log.title, detail: log.detail, role: log.role, createdAt: Date.now() },
+    ],
+  }));
+}
+
+// Internal mutate helper (same as mutateProject but accessible here)
+function mutateProjectInternal(
+  userId: string,
+  projectId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fn: (p: any) => any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
+  const projects = getProjects(userId);
+  const idx = projects.findIndex((p) => p.id === projectId);
+  if (idx === -1) return null;
+  projects[idx] = fn({ ...projects[idx] });
+  saveProjects(userId, projects);
+  return projects[idx];
 }

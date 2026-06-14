@@ -5,9 +5,11 @@ import { useAuth } from "@/context/AuthContext";
 import {
   getProject, getGoal, addBoardMessage, buildContextWindow,
   getEmployeeDetails, parseMentions, saveProjects, getProjects,
+  detectWorkflowTrigger,
   Project, Goal, Message, EmployeeRole
 } from "@/lib/store";
 import { EMPLOYEES } from "@/lib/plans";
+import { triggerSalesWorkflow } from "@/lib/workflows/salesWorkflow";
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ArrowLeft, Send, Zap, AtSign, MessageSquare } from "lucide-react";
@@ -24,6 +26,7 @@ export default function GoalBoardRoomPage() {
   const [running, setRunning] = useState(false);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
+  const [workflowTriggered, setWorkflowTriggered] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -85,7 +88,6 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
           projectGoal: g.text,
           contextWindow: ctx,
           mode: "board",
-          userId: user?.uid,
         }),
       });
       const data = await res.json();
@@ -93,6 +95,35 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
     } catch {
       return { content: `As ${emp.name}, I recommend proceeding carefully and validating assumptions first.`, isMock: true };
     }
+  }
+
+  async function checkAndTriggerWorkflow(p: Project, g: Goal) {
+    if (workflowTriggered) return;
+    if (!p.hiredRoles.includes("sales")) return;
+
+    const trigger = detectWorkflowTrigger(g.boardMessages);
+    if (!trigger.shouldTrigger || !trigger.role) return;
+
+    // Only trigger once per board room
+    const alreadyTriggered = g.tasks.some((t) => t.assignedRole === "sales");
+    if (alreadyTriggered) return;
+
+    setWorkflowTriggered(true);
+
+    const boardContext = g.boardMessages
+      .slice(-8)
+      .map((m) => `[${m.senderName}]: ${m.content}`)
+      .join("\n");
+
+    await triggerSalesWorkflow({
+      userId: user!.uid,
+      projectId: id,
+      goalId,
+      goalText: g.text,
+      boardContext,
+    });
+
+    refresh();
   }
 
   async function handleSend() {
@@ -114,10 +145,13 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
 
     // Determine responding agents
     const mentions = parseMentions(text);
+    const agentMessages = goal.boardMessages.filter(
+      (m) => m.sender !== "user" && m.sender !== "system"
+    );
     const respondingRoles: EmployeeRole[] =
       mentions.length > 0
         ? mentions.filter((r) => project.hiredRoles.includes(r))
-        : goal.boardMessages.filter(m => m.sender !== "user" && m.sender !== "system").length === 0
+        : agentMessages.length === 0
         ? project.hiredRoles
         : [project.hiredRoles[0]];
 
@@ -165,6 +199,12 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
       await new Promise((r) => setTimeout(r, 400));
     }
 
+    // After agents respond, check if we should trigger a workflow
+    const latestG = getGoal(user!.uid, id, goalId)!;
+    const latestP = getProject(user!.uid, id)!;
+    await checkAndTriggerWorkflow(latestP, latestG);
+
+    refresh();
     setRunning(false);
   }
 
@@ -186,6 +226,8 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
     </div>
   );
 
+  const salesTaskActive = goal.tasks.some((t) => t.assignedRole === "sales" && t.status === "running");
+
   return (
     <AppLayout projectId={id}>
       <div className="flex flex-col" style={{ height: "100vh" }}>
@@ -199,7 +241,15 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
               <Zap className="size-3.5 text-[#E94560] shrink-0" />
               <p className="text-sm font-semibold text-white truncate">{goal.text}</p>
             </div>
-            <p className="text-xs text-slate-500">{goal.boardMessages.length} messages · {project.hiredRoles.length} agents active</p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-slate-500">{goal.boardMessages.length} messages · {project.hiredRoles.length} agents</p>
+              {salesTaskActive && (
+                <span className="flex items-center gap-1 text-xs text-[#E94560]">
+                  <span className="size-1.5 rounded-full bg-[#E94560] animate-pulse" />
+                  Sales workflow running
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={() => router.push(`/project/${id}/chats`)}
             className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors shrink-0">
@@ -207,8 +257,21 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
           </button>
         </div>
 
+        {/* Sales workflow banner */}
+        {salesTaskActive && (
+          <div className="px-5 py-2.5 bg-[#E94560]/10 border-b border-[#E94560]/20 flex items-center gap-3">
+            <span className="text-[#E94560] text-sm">🤝</span>
+            <p className="text-xs text-slate-300">
+              Sales Ghost is running a lead generation workflow.{" "}
+              <button onClick={() => router.push(`/project/${id}/chat/sales`)} className="text-[#E94560] hover:underline font-medium">
+                Open Sales Ghost chat to review and approve →
+              </button>
+            </p>
+          </div>
+        )}
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 py-5">
           <div className="max-w-3xl mx-auto w-full space-y-4">
             {goal.boardMessages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -230,6 +293,11 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
                     );
                   })}
                 </div>
+                {project.hiredRoles.includes("sales") && (
+                  <p className="text-xs text-slate-500 mt-4 bg-white/5 border border-white/10 rounded-lg px-4 py-2">
+                    Tip: Mention leads, outreach, or customers to auto-trigger the Sales Ghost workflow
+                  </p>
+                )}
               </div>
             )}
 
@@ -265,7 +333,7 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
               </button>
               <textarea ref={inputRef} value={input} onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Message the board... use @ceo @pm @cto to mention agents"
+                placeholder="Message the board... use @ceo @pm @sales to mention agents"
                 rows={1} className="flex-1 bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none resize-none max-h-32 leading-relaxed"
                 style={{ minHeight: "24px" }} />
               <button onClick={handleSend} disabled={!input.trim() || running}
@@ -275,7 +343,7 @@ Respond in 3-5 sentences from your role's perspective. Be specific and actionabl
                   : <Send className="size-3.5 text-white" />}
               </button>
             </div>
-            <p className="text-[10px] text-slate-600 mt-1.5 px-1">Enter to send · Shift+Enter for new line · @role to mention specific agents</p>
+            <p className="text-[10px] text-slate-600 mt-1.5 px-1">Enter to send · Shift+Enter for new line · @role to mention agents</p>
           </div>
         </div>
       </div>
