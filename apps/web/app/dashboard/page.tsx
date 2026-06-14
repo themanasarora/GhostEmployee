@@ -24,13 +24,14 @@ export default function DashboardPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!user || !name.trim()) return;
+    if (!user || !name.trim() || !description.trim()) return;
     setCreating(true);
     const project = createProject(user.uid, name.trim(), description.trim());
     setCreating(false);
     setShowModal(false);
     setName(""); setDescription("");
-    router.push(`/project/${project.id}/plan`);
+    // Always go to hire page first for Advanced plan
+    router.push(`/project/${project.id}/hire`);
   }
 
   if (loading) return (
@@ -85,7 +86,7 @@ export default function DashboardPage() {
                 <Zap className="size-5 text-[#E94560]" />
               </div>
               <h3 className="text-sm font-semibold text-white mb-1">No projects yet</h3>
-              <p className="text-xs text-slate-400 max-w-xs mb-5">Create a project to hire your AI team, run board meetings, and chat with individual employees.</p>
+              <p className="text-xs text-slate-400 max-w-xs mb-5">Create a project, hire your AI team, and they'll kick off a board meeting automatically.</p>
               <Button size="sm" onClick={() => setShowModal(true)}>
                 <Plus className="size-4" /> Create first project
               </Button>
@@ -99,8 +100,8 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium text-white truncate">{project.name}</span>
                       {project.plan ? (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${project.plan === "advanced" ? "bg-[#E94560]/15 text-[#E94560]" : "bg-indigo-500/15 text-indigo-400"}`}>
-                          {project.plan}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-[#E94560]/15 text-[#E94560]">
+                          advanced
                         </span>
                       ) : (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 shrink-0">setup</span>
@@ -127,20 +128,40 @@ export default function DashboardPage() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowModal(false)} />
           <div className="relative z-10 w-full max-w-md bg-[#0F0F1A] border border-white/15 rounded-2xl p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-bold text-white">New project</h2>
+              <div>
+                <h2 className="text-base font-bold text-white">New project</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Your AI team will read this to understand the project.</p>
+              </div>
               <button onClick={() => setShowModal(false)} className="text-slate-500 hover:text-white"><X className="size-4" /></button>
             </div>
             <form onSubmit={handleCreate} className="space-y-4">
-              <Input label="Project name" placeholder="e.g. AI Resume Optimizer" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+              <Input
+                label="Project name"
+                placeholder="e.g. AI Resume Optimizer"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                autoFocus
+              />
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-300">Description (optional)</label>
-                <textarea className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E94560] focus:border-transparent transition-colors resize-none"
-                  placeholder="What are you building or validating?" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+                <label className="text-sm font-medium text-slate-300">
+                  Description <span className="text-[#E94560]">*</span>
+                </label>
+                <textarea
+                  className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E94560] focus:border-transparent transition-colors resize-none"
+                  placeholder="What are you building? Who is it for? What problem does it solve? The more context, the better your team performs."
+                  rows={4}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-slate-500">Required — agents use this as their primary project context.</p>
               </div>
-              <p className="text-xs text-slate-600">After creating, you'll pick a plan and hire your team.</p>
               <div className="flex gap-3 pt-1">
                 <Button variant="ghost" fullWidth type="button" onClick={() => setShowModal(false)}>Cancel</Button>
-                <Button fullWidth type="submit" loading={creating} disabled={!name.trim()}>Create project</Button>
+                <Button fullWidth type="submit" loading={creating} disabled={!name.trim() || !description.trim()}>
+                  Create project →
+                </Button>
               </div>
             </form>
           </div>
