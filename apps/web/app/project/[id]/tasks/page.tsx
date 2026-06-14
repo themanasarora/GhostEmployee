@@ -323,7 +323,7 @@ export default function TaskLogPage() {
 
     window.setTimeout(() => {
       if (actionType === "email") {
-        const route = taskDescription.toLowerCase().includes("draft") || activeEmailDeliveryMode === "draft" ? "/api/gmail/draft" : "/api/gmail/send";
+        const route = activeEmailDeliveryMode === "draft" ? "/api/gmail/draft" : "/api/gmail/send";
         void (async () => {
           try {
             const response = await fetch(route, {
@@ -730,22 +730,30 @@ export default function TaskLogPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-slate-300">Attach to goal</label>
                 <select value={selectedGoalId} onChange={(e) => setSelectedGoalId(e.target.value)} className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E94560]">
-                  {project.goals.length === 0 && <option value="">Create a new queue automatically</option>}
-                  {project.goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.text}</option>)}
+                  {project.goals.length === 0 && <option value="" className="bg-[#0F0F1A]">Create a new queue automatically</option>}
+                  {project.goals.map((goal) => <option key={goal.id} value={goal.id} className="bg-[#0F0F1A]">{goal.text}</option>)}
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-slate-300">Action</label>
                 <select value={action} onChange={(e) => setAction(e.target.value as TaskAction)} className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E94560]">
-                  {ACTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {ACTIONS.map((item) => {
+                    const isAdvanced = ["ats", "browser", "calendar"].includes(item.value);
+                    const disabled = project.plan === "basic" && isAdvanced;
+                    return (
+                      <option key={item.value} value={item.value} disabled={disabled} className="bg-[#0F0F1A]">
+                        {item.label} {disabled ? "(Advanced plan only)" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
                 <p className="text-[11px] text-slate-500">{actionConfig?.detail}</p>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-slate-300">Source</label>
                 <select value={source} onChange={(e) => setSource(e.target.value as TaskSource)} className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E94560]">
-                  <option value="user">User defined</option>
-                  <option value="agent">Agent generated</option>
+                  <option value="user" className="bg-[#0F0F1A]">User defined</option>
+                  <option value="agent" className="bg-[#0F0F1A]">Agent generated</option>
                 </select>
               </div>
               {action === "email" && (
@@ -753,8 +761,8 @@ export default function TaskLogPage() {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-sm font-medium text-slate-300">Delivery mode</label>
                     <select value={emailDeliveryMode} onChange={(e) => setEmailDeliveryMode(e.target.value as EmailDeliveryMode)} className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E94560]">
-                      <option value="draft">Create draft</option>
-                      <option value="send">Send email</option>
+                      <option value="draft" className="bg-[#0F0F1A]">Create draft</option>
+                      <option value="send" className="bg-[#0F0F1A]">Send email</option>
                     </select>
                   </div>
                   <Input label="Recipient email" placeholder="person@company.com" value={emailDraft.to} onChange={(e) => setEmailDraft((prev) => ({ ...prev, to: e.target.value }))} />
@@ -770,10 +778,10 @@ export default function TaskLogPage() {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-sm font-medium text-slate-300">Calendar Action</label>
                     <select value={calendarAction} onChange={(e) => setCalendarAction(e.target.value as CalendarAction)} className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E94560]">
-                      <option value="list">List upcoming events</option>
-                      <option value="create">Schedule new event</option>
-                      <option value="update">Update existing event</option>
-                      <option value="delete">Cancel/delete event</option>
+                      <option value="list" className="bg-[#0F0F1A]">List upcoming events</option>
+                      <option value="create" className="bg-[#0F0F1A]">Schedule new event</option>
+                      <option value="update" className="bg-[#0F0F1A]">Update existing event</option>
+                      <option value="delete" className="bg-[#0F0F1A]">Cancel/delete event</option>
                     </select>
                   </div>
                   {calendarAction === "create" && (

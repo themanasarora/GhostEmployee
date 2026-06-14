@@ -18,12 +18,14 @@ export default function HireTeamPage() {
   const [selected, setSelected] = useState<Set<EmployeeRole>>(new Set(REQUIRED));
   const [saving, setSaving] = useState(false);
   const [projectName, setProjectName] = useState("");
+  const [projectPlan, setProjectPlan] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     const project = getProject(user.uid, id);
     if (!project) { router.replace("/dashboard"); return; }
     setProjectName(project.name);
+    setProjectPlan(project.plan);
     // Pre-select already hired roles
     if (project.hiredRoles.length > 0) {
       setSelected(new Set(project.hiredRoles));
@@ -32,6 +34,7 @@ export default function HireTeamPage() {
 
   function toggle(role: EmployeeRole) {
     if (REQUIRED.includes(role)) return;
+    if (projectPlan === "basic" && !["ceo", "pm", "research", "growth"].includes(role)) return;
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(role) ? next.delete(role) : next.add(role);
@@ -72,6 +75,7 @@ export default function HireTeamPage() {
           <h2 className="text-2xl font-bold text-white">Hire your AI team</h2>
           <p className="text-sm text-slate-400">
             Select the employees for this project. They'll collaborate on every goal you assign.
+            {projectPlan === "basic" && " Upgrade to Advanced to unlock the full 8-person roster."}
           </p>
         </div>
 
@@ -110,9 +114,13 @@ export default function HireTeamPage() {
                 onClick={() => toggle(emp.role)}
                 className={cn(
                   "flex items-start gap-3 rounded-xl border p-4 transition-all duration-150",
-                  isRequired ? "border-[#E94560]/40 bg-[#E94560]/5 cursor-default"
-                    : isSelected ? "border-[#E94560]/40 bg-[#E94560]/5 cursor-pointer"
-                    : "border-white/10 bg-white/[0.03] cursor-pointer hover:border-white/20"
+                  projectPlan === "basic" && !["ceo", "pm", "research", "growth"].includes(emp.role) 
+                    ? "border-white/5 bg-white/[0.01] opacity-50 cursor-not-allowed"
+                    : isRequired 
+                      ? "border-[#E94560]/40 bg-[#E94560]/5 cursor-default"
+                      : isSelected 
+                        ? "border-[#E94560]/40 bg-[#E94560]/5 cursor-pointer"
+                        : "border-white/10 bg-white/[0.03] cursor-pointer hover:border-white/20"
                 )}
               >
                 <div className="shrink-0 mt-0.5">

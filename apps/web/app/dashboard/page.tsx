@@ -24,7 +24,7 @@ export default function DashboardPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!user || !name.trim()) return;
+    if (!user || !name.trim() || !description.trim()) return;
     setCreating(true);
     const project = createProject(user.uid, name.trim(), description.trim());
     setCreating(false);
@@ -133,14 +133,14 @@ export default function DashboardPage() {
             <form onSubmit={handleCreate} className="space-y-4">
               <Input label="Project name" placeholder="e.g. AI Resume Optimizer" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-300">Description (optional)</label>
+                <label className="text-sm font-medium text-slate-300">Description</label>
                 <textarea className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E94560] focus:border-transparent transition-colors resize-none"
-                  placeholder="What are you building or validating?" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+                  placeholder="What are you building or validating?" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} required />
               </div>
               <p className="text-xs text-slate-600">After creating, you'll pick a plan and hire your team.</p>
               <div className="flex gap-3 pt-1">
                 <Button variant="ghost" fullWidth type="button" onClick={() => setShowModal(false)}>Cancel</Button>
-                <Button fullWidth type="submit" loading={creating} disabled={!name.trim()}>Create project</Button>
+                <Button fullWidth type="submit" loading={creating} disabled={!name.trim() || !description.trim()}>Create project</Button>
               </div>
             </form>
           </div>
