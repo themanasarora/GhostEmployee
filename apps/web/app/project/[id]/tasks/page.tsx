@@ -403,7 +403,7 @@ export default function TaskLogPage() {
               description: activeCalendarEvent.description || taskDescription,
               start: activeCalendarEvent.start,
               end: activeCalendarEvent.end,
-              attendees: activeCalendarEvent.attendees ? activeCalendarEvent.attendees.split(",").map(e => e.trim()) : [],
+              attendees: activeCalendarEvent.attendees ? activeCalendarEvent.attendees.split(",").map((e: string) => e.trim()) : [],
               timeZone,
             };
           } else if (activeCalendarAction === "update") {
@@ -502,6 +502,70 @@ export default function TaskLogPage() {
             deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
               title: `${taskTitle} failed`,
               content: `Google Calendar execution failed.\n\nError: ${errorMessage}`,
+            });
+            done();
+          }
+        })();
+        return;
+      }
+
+      if (actionType === "slack") {
+        void (async () => {
+          try {
+            const response = await fetch("/api/slack/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId,
+                message: taskDescription,
+                title: taskTitle,
+              }),
+            });
+            const data = await response.json();
+
+            if (!response.ok || !data.ok) {
+              const errorMessage = data.error || "Slack request failed.";
+              appendTaskLog(userId, projectId, goalId, taskId, {
+                title: "Slack error",
+                detail: errorMessage,
+                level: "error",
+                role: assigneeRole,
+              });
+              updateTaskFailure(userId, projectId, goalId, taskId, errorMessage);
+              deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
+                title: `${taskTitle} failed`,
+                content: `Slack message delivery failed.\n\nError: ${errorMessage}\n\nMessage: ${taskDescription}`,
+              });
+              done();
+              return;
+            }
+
+            const resultText = `Slack message posted: "${taskTitle}"`;
+
+            appendTaskLog(userId, projectId, goalId, taskId, {
+              title: "Slack message posted",
+              detail: resultText,
+              level: "success",
+              role: assigneeRole,
+            });
+            completeTask(userId, projectId, goalId, taskId, resultText);
+            deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
+              title: `${taskTitle} artifact`,
+              content: `Slack message posted successfully.\n\nTitle: ${taskTitle}\nMessage: ${taskDescription}\n\nResponse:\n${JSON.stringify(data, null, 2)}`,
+            });
+            done();
+          } catch (slackError) {
+            const errorMessage = slackError instanceof Error ? slackError.message : "Unknown Slack error.";
+            appendTaskLog(userId, projectId, goalId, taskId, {
+              title: "Slack error",
+              detail: errorMessage,
+              level: "error",
+              role: assigneeRole,
+            });
+            updateTaskFailure(userId, projectId, goalId, taskId, errorMessage);
+            deliverTaskArtifact(userId, projectId, goalId, taskId, assigneeRole, {
+              title: `${taskTitle} failed`,
+              content: `Slack execution failed.\n\nError: ${errorMessage}\n\nMessage: ${taskDescription}`,
             });
             done();
           }
